@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Admin · Vehicle Control Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="brand-mark" style="margin: 0 auto 14px;">VC</div>
+    <h2 style="margin-bottom:6px;">Admin login</h2>
+    <div class="sub" style="color:var(--text-dim); font-size:13px; margin-bottom:18px;">Enter the admin password to continue</div>
+    <div class="field" style="text-align:left;">
+      <input type="password" id="passwordInput" placeholder="Password" style="width:100%;">
+    </div>
+    <div class="error-msg" id="loginError" style="display:none;"></div>
+    <button class="btn btn-primary btn-block" onclick="login()">Log in</button>
+    <div style="margin-top:16px;"><a href="index.html" style="font-size:13px;">&larr; Back to dashboard</a></div>
+  </div>
+</div>
+
+<div id="adminApp" style="display:none;">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">VC</div>
+      <div>
+        <div class="brand-title">Admin panel</div>
+        <div class="brand-sub">Vehicle Control Sheet</div>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <a href="index.html" class="btn btn-outline btn-sm">Dashboard</a>
+      <button class="btn btn-outline btn-sm" onclick="logout()">Log out</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="admin-tabs">
+      <div class="admin-tab active" data-tab="cars">Cars</div>
+      <div class="admin-tab" data-tab="staff">Staff</div>
+      <div class="admin-tab" data-tab="records">Records</div>
+    </div>
+
+    <!-- CARS TAB -->
+    <div class="admin-panel active" id="panel-cars">
+      <div class="toolbar">
+        <button class="btn btn-primary btn-sm" onclick="openAddCarForm()">+ Add car</button>
+      </div>
+
+      <div id="addCarForm" style="display:none; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px;">
+        <div class="toolbar">
+          <input class="filter-input" id="newCarNumber" placeholder="Car # (e.g. 02)">
+          <input class="filter-input" id="newRegNumber" placeholder="Reg # (e.g. 61228)">
+          <input class="filter-input" id="newAllocation" placeholder="Allocation (e.g. LSM)">
+          <button class="btn btn-primary btn-sm" onclick="submitAddCar()">Save</button>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('addCarForm').style.display='none'">Cancel</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Car #</th><th>Reg #</th><th>Allocation</th><th>Status</th><th>Loaned to</th><th>Actions</th></tr></thead>
+          <tbody id="carsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- STAFF TAB -->
+    <div class="admin-panel" id="panel-staff">
+      <div class="toolbar">
+        <input class="filter-input" id="newStaffNumber" placeholder="Staff number">
+        <input class="filter-input" id="newStaffNameInput" placeholder="Name">
+        <button class="btn btn-primary btn-sm" onclick="submitAddStaff()">+ Add staff</button>
+        <span style="flex:1;"></span>
+        <label class="btn btn-outline btn-sm" style="cursor:pointer;">
+          Import CSV
+          <input type="file" id="csvFile" accept=".csv" style="display:none;" onchange="importCsv(event)">
+        </label>
+      </div>
+      <div class="sub" style="color:var(--text-dim); font-size:12.5px; margin-bottom:12px;">
+        CSV format: column A = staff number, column B = name. No header row needed.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Staff #</th><th>Name</th><th>Actions</th></tr></thead>
+          <tbody id="staffTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- RECORDS TAB -->
+    <div class="admin-panel" id="panel-records">
+      <div class="toolbar">
+        <input class="filter-input" type="date" id="filterDate">
+        <select class="filter-input" id="filterShift">
+          <option value="">All shifts</option>
+          <option value="Day">Day (06:00-18:00)</option>
+          <option value="Night">Night (18:00-06:00)</option>
+        </select>
+        <input class="filter-input" id="filterStaff" placeholder="Staff #">
+        <input class="filter-input" id="filterCar" placeholder="Car #">
+        <button class="btn btn-outline btn-sm" onclick="loadRecords()">Filter</button>
+        <button class="btn btn-primary btn-sm" onclick="exportCsv()">Export CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Shift date</th><th>Shift</th><th>Car</th><th>Team</th>
+            <th>Issued to</th><th>Issued at</th><th>Returned at</th><th>Returned by</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="recordsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/admin.js"></script>
+</body>
+</html>
