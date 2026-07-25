@@ -1,5 +1,26 @@
 let adminPassword = sessionStorage.getItem('adminPassword') || '';
 
+const ALLOCATIONS = [
+  'LSM / LMM',
+  'B1 ENGINEER / TECHNICIAN',
+  'B2 ENGINEER',
+  'CAT A TECHNICIAN',
+  'CABIN TEAM'
+];
+
+let editingCarId = null;
+let editingStaffNumber = null;
+
+function closeAdminModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+function populateAllocationSelects() {
+  const opts = ALLOCATIONS.map(a => `<option value="${a}">${a}</option>`).join('');
+  document.getElementById('newAllocation').innerHTML = opts;
+  document.getElementById('editAllocation').innerHTML = opts;
+}
+
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -15,7 +36,7 @@ function escapeHtml(str) {
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' GST';
 }
 
 async function adminFetch(url, options = {}) {
@@ -38,6 +59,7 @@ function showLogin() {
 function showApp() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('adminApp').style.display = 'block';
+  populateAllocationSelects();
   loadCars();
   loadStaff();
   loadRecords();
@@ -117,9 +139,12 @@ async function submitAddCar() {
   }
 }
 
+let allCarsCache = [];
+
 async function loadCars() {
   const res = await adminFetch('/api/admin/cars');
   const cars = await res.json();
+  allCarsCache = cars;
 
   // also need loan info for "loaned to" column -> fetch public cars endpoint which joins active loan
   const carsRes = await fetch('/api/cars');
@@ -140,15 +165,52 @@ async function loadCars() {
         <td>
           <select class="filter-input" onchange="updateCarStatus(${car.id}, this.value)" ${car.status === 'loaned' ? 'disabled' : ''}>
             <option value="available" ${car.status === 'available' ? 'selected' : ''}>Available</option>
-            <option value="maintenance" ${car.status === 'maintenance' ? 'selected' : ''}>Maintenance</option>
-            <option value="loaned" ${car.status === 'loaned' ? 'selected' : ''}>Loaned</option>
+            <option value="maintenance" ${car.status === 'maintenance' ? 'selected' : ''}>Out of Service</option>
+            <option value="loaned" ${car.status === 'loaned' ? 'selected' : ''}>Loaned Out</option>
           </select>
         </td>
         <td>${loanedTo}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="deleteCar(${car.id})">Delete</button></td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-outline btn-sm" onclick="openEditCarModal(${car.id})">Edit</button>
+          <button class="btn btn-outline btn-sm" onclick="deleteCar(${car.id})">Delete</button>
+        </td>
       </tr>
     `;
   }).join('') || `<tr><td colspan="6" style="text-align:center; color:var(--text-dim);">No cars yet</td></tr>`;
+}
+
+function openEditCarModal(carId) {
+  const car = allCarsCache.find(c => c.id === carId);
+  if (!car) return;
+  editingCarId = car.id;
+  document.getElementById('editCarNumber').value = car.car_number;
+  document.getElementById('editRegNumber').value = car.reg_number;
+  document.getElementById('editAllocation').value = car.allocation || ALLOCATIONS[0];
+  document.getElementById('editCarError').style.display = 'none';
+  document.getElementById('editCarModalOverlay').classList.add('open');
+}
+
+async function submitEditCar() {
+  const errDiv = document.getElementById('editCarError');
+  errDiv.style.display = 'none';
+  const car_number = document.getElementById('editCarNumber').value.trim();
+  const reg_number = document.getElementById('editRegNumber').value.trim();
+  const allocation = document.getElementById('editAllocation').value;
+  if (!car_number || !reg_number) { errDiv.textContent = 'Car # and Reg # are required'; errDiv.style.display = 'block'; return; }
+
+  const res = await adminFetch(`/api/admin/cars/${editingCarId}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ car_number, reg_number, allocation })
+  });
+  if (res.ok) {
+    showToast('Car updated');
+    closeAdminModal('editCarModalOverlay');
+    loadCars();
+  } else {
+    const err = await res.json();
+    errDiv.textContent = err.error || 'Update failed';
+    errDiv.style.display = 'block';
+  }
 }
 
 async function updateCarStatus(id, status) {
@@ -173,17 +235,54 @@ async function deleteCar(id) {
 }
 
 // ---------------- STAFF ----------------
+let allStaffCache = [];
+
 async function loadStaff() {
   const res = await adminFetch('/api/admin/staff');
   const staff = await res.json();
+  allStaffCache = staff;
   const tbody = document.getElementById('staffTableBody');
   tbody.innerHTML = staff.map(s => `
     <tr>
       <td>${escapeHtml(s.staff_number)}</td>
       <td>${escapeHtml(s.name)}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="deleteStaff('${escapeHtml(s.staff_number)}')">Delete</button></td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-outline btn-sm" onclick="openEditStaffModal('${escapeHtml(s.staff_number)}')">Edit</button>
+        <button class="btn btn-outline btn-sm" onclick="deleteStaff('${escapeHtml(s.staff_number)}')">Delete</button>
+      </td>
     </tr>
   `).join('') || `<tr><td colspan="3" style="text-align:center; color:var(--text-dim);">No staff yet</td></tr>`;
+}
+
+function openEditStaffModal(staffNumber) {
+  const staff = allStaffCache.find(s => s.staff_number === staffNumber);
+  if (!staff) return;
+  editingStaffNumber = staffNumber;
+  document.getElementById('editStaffSub').textContent = `Staff #${staffNumber}`;
+  document.getElementById('editStaffName').value = staff.name;
+  document.getElementById('editStaffError').style.display = 'none';
+  document.getElementById('editStaffModalOverlay').classList.add('open');
+}
+
+async function submitEditStaff() {
+  const errDiv = document.getElementById('editStaffError');
+  errDiv.style.display = 'none';
+  const name = document.getElementById('editStaffName').value.trim();
+  if (!name) { errDiv.textContent = 'Name is required'; errDiv.style.display = 'block'; return; }
+
+  const res = await adminFetch(`/api/admin/staff/${encodeURIComponent(editingStaffNumber)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (res.ok) {
+    showToast('Staff updated');
+    closeAdminModal('editStaffModalOverlay');
+    loadStaff();
+  } else {
+    const err = await res.json();
+    errDiv.textContent = err.error || 'Update failed';
+    errDiv.style.display = 'block';
+  }
 }
 
 async function submitAddStaff() {
@@ -233,13 +332,13 @@ async function importCsv(event) {
 // ---------------- RECORDS ----------------
 async function loadRecords() {
   const date = document.getElementById('filterDate').value;
-  const shift = document.getElementById('filterShift').value;
+  const team = document.getElementById('filterTeam').value;
   const staff = document.getElementById('filterStaff').value.trim();
   const car = document.getElementById('filterCar').value.trim();
 
   const params = new URLSearchParams();
   if (date) params.set('date', date);
-  if (shift) params.set('shift', shift);
+  if (team) params.set('team', team);
   if (staff) params.set('staff_number', staff);
   if (car) params.set('car_number', car);
 
@@ -251,13 +350,13 @@ async function loadRecords() {
     <tr>
       <td>${l.shift_date}</td>
       <td>${l.shift}</td>
+      <td>${l.duty_team ? 'Team ' + escapeHtml(l.duty_team) : '—'}</td>
       <td>#${escapeHtml(l.car_number)} · ${escapeHtml(l.reg_number)}</td>
-      <td>${escapeHtml(l.team || '')}</td>
       <td>${escapeHtml(l.staff_number)} · ${escapeHtml(l.staff_name)}</td>
       <td>${fmtTime(l.issued_at)}</td>
       <td>${fmtTime(l.returned_at)}</td>
       <td>${l.returned_by_staff_number ? escapeHtml(l.returned_by_staff_number) + ' · ' + escapeHtml(l.returned_by_name) : '—'}</td>
-      <td><span class="status-badge ${l.status === 'active' ? 'loaned' : 'available'}">${l.status}</span></td>
+      <td><span class="status-badge ${l.status === 'active' ? 'loaned' : 'available'}">${l.status === 'active' ? 'Loaned Out' : 'Returned'}</span></td>
       <td>${l.status === 'active' ? `<button class="btn btn-outline btn-sm" onclick="forceReturn(${l.id})">Force return</button>` : '—'}</td>
     </tr>
   `).join('') || `<tr><td colspan="10" style="text-align:center; color:var(--text-dim);">No records found</td></tr>`;
@@ -271,10 +370,10 @@ async function forceReturn(loanId) {
 
 function exportCsv() {
   const date = document.getElementById('filterDate').value;
-  const shift = document.getElementById('filterShift').value;
+  const team = document.getElementById('filterTeam').value;
   const params = new URLSearchParams();
   if (date) params.set('date', date);
-  if (shift) params.set('shift', shift);
+  if (team) params.set('team', team);
   const url = `/api/admin/loans/export?${params.toString()}`;
 
   // fetch with auth header then trigger download

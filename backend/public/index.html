@@ -19,7 +19,7 @@
     </div>
   </div>
   <div style="display:flex; align-items:center; gap:10px;">
-    <div class="shift-pill" id="shiftPill"><span class="dot"></span><span id="shiftLabel">--</span></div>
+    <div class="shift-pill" id="dutyPill"><span class="dot"></span><span id="dutyLabel">--</span></div>
     <a href="admin.html" class="btn btn-outline btn-sm">Admin</a>
   </div>
 </div>
@@ -33,11 +33,11 @@
     </div>
     <div class="summary-card loaned">
       <div class="num" id="countLoaned">0</div>
-      <div class="label">On Loan</div>
+      <div class="label">Loaned Out</div>
     </div>
     <div class="summary-card maintenance">
       <div class="num" id="countMaintenance">0</div>
-      <div class="label">Maintenance</div>
+      <div class="label">Out of Service</div>
     </div>
   </div>
 
@@ -68,11 +68,6 @@
     <div class="field" id="newStaffNameField" style="display:none;">
       <label>Your name (staff number not found)</label>
       <input type="text" id="newStaffName" placeholder="Full name">
-    </div>
-
-    <div class="field">
-      <label>Team (optional)</label>
-      <input type="text" id="loanTeam" placeholder="e.g. Engineer B1">
     </div>
 
     <div class="error-msg" id="loanError" style="display:none;"></div>

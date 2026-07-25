@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS loans (
   staff_number TEXT NOT NULL,
   staff_name TEXT NOT NULL,
   team TEXT,
+  duty_team TEXT,               -- rotation team on duty (A/B/C/D) at time of issue
   shift TEXT NOT NULL,          -- 'Day (06:00-18:00)' | 'Night (18:00-06:00)'
   shift_date TEXT NOT NULL,     -- date the shift started, YYYY-MM-DD
   issued_at TEXT NOT NULL,
@@ -42,5 +43,12 @@ CREATE TABLE IF NOT EXISTS loans (
   FOREIGN KEY (car_id) REFERENCES cars(id)
 );
 `);
+
+// Simple migration: add duty_team column if this DB pre-dates it
+try {
+  db.exec('ALTER TABLE loans ADD COLUMN duty_team TEXT');
+} catch (err) {
+  // column already exists - ignore
+}
 
 module.exports = db;

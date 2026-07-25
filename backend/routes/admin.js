@@ -7,6 +7,12 @@ const adminAuth = require('../adminAuth');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+function formatUAE(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString('en-GB', { timeZone: 'Asia/Dubai', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' GST';
+}
+
 // Login (just validates password against env var)
 router.post('/login', (req, res) => {
   const { password } = req.body;
@@ -125,7 +131,7 @@ router.post('/staff/import', upload.single('file'), (req, res) => {
 
 // ---- LOANS (history / manual correction) ----
 router.get('/loans', (req, res) => {
-  const { date, shift, staff_number, car_number, status } = req.query;
+  const { date, shift, staff_number, car_number, status, team } = req.query;
   let query = 'SELECT * FROM loans WHERE 1=1';
   const params = [];
   if (date) { query += ' AND shift_date = ?'; params.push(date); }
@@ -133,6 +139,7 @@ router.get('/loans', (req, res) => {
   if (staff_number) { query += ' AND staff_number = ?'; params.push(staff_number); }
   if (car_number) { query += ' AND car_number = ?'; params.push(car_number); }
   if (status) { query += ' AND status = ?'; params.push(status); }
+  if (team) { query += ' AND duty_team = ?'; params.push(team); }
   query += ' ORDER BY issued_at DESC';
   res.json(db.prepare(query).all(...params));
 });
@@ -152,18 +159,19 @@ router.post('/loans/:id/force-return', (req, res) => {
 
 // Export CSV
 router.get('/loans/export', (req, res) => {
-  const { date, shift } = req.query;
+  const { date, shift, team } = req.query;
   let query = 'SELECT * FROM loans WHERE 1=1';
   const params = [];
   if (date) { query += ' AND shift_date = ?'; params.push(date); }
   if (shift) { query += ' AND shift LIKE ?'; params.push(`%${shift}%`); }
+  if (team) { query += ' AND duty_team = ?'; params.push(team); }
   query += ' ORDER BY issued_at DESC';
   const loans = db.prepare(query).all(...params);
 
-  const header = ['Shift Date','Shift','Car #','Reg #','Team','Issued To (Staff #)','Issued To (Name)','Issued At','Returned At','Returned By (Staff #)','Returned By (Name)','Status'];
+  const header = ['Shift Date','Shift','Team','Car #','Reg #','Issued To (Staff #)','Issued To (Name)','Issued At (UAE)','Returned At (UAE)','Returned By (Staff #)','Returned By (Name)','Status'];
   const rows = loans.map(l => [
-    l.shift_date, l.shift, l.car_number, l.reg_number, l.team || '',
-    l.staff_number, l.staff_name, l.issued_at, l.returned_at || '', l.returned_by_staff_number || '', l.returned_by_name || '', l.status
+    l.shift_date, l.shift, l.duty_team || '', l.car_number, l.reg_number,
+    l.staff_number, l.staff_name, formatUAE(l.issued_at), formatUAE(l.returned_at), l.returned_by_staff_number || '', l.returned_by_name || '', l.status
   ]);
   const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
 

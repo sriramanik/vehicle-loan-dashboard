@@ -4,26 +4,44 @@ let returnTargetCarId = null;
 let verifiedStaff = null; // for loan flow
 let verifiedReturnStaff = null; // for return flow
 
+const ALLOCATIONS = [
+  'LSM / LMM',
+  'B1 ENGINEER / TECHNICIAN',
+  'B2 ENGINEER',
+  'CAT A TECHNICIAN',
+  'CABIN TEAM'
+];
+
 function fmtTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' GST';
 }
 
-function updateClock() {
+function updateDateLabel() {
   const now = new Date();
-  document.getElementById('dateLabel').textContent = now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-  const hour = now.getHours();
-  const isDay = hour >= 6 && hour < 18;
-  const pill = document.getElementById('shiftPill');
-  pill.classList.toggle('night', !isDay);
-  document.getElementById('shiftLabel').innerHTML = isDay
-    ? '<strong>Day shift</strong> · 06:00–18:00'
-    : '<strong>Night shift</strong> · 18:00–06:00';
+  document.getElementById('dateLabel').textContent = now.toLocaleDateString('en-GB', { timeZone: 'Asia/Dubai', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ' (Dubai)';
 }
-updateClock();
-setInterval(updateClock, 30000);
+
+async function updateDutyPill() {
+  try {
+    const res = await fetch('/api/loans/duty/current');
+    const duty = await res.json();
+    const pill = document.getElementById('dutyPill');
+    pill.classList.toggle('night', !duty.isDay);
+    const range = duty.isDay ? '06:00–18:00' : '18:00–06:00';
+    document.getElementById('dutyLabel').innerHTML = duty.team
+      ? `<strong>Team ${duty.team}</strong> · ${duty.isDay ? 'Day' : 'Night'} shift · ${range}`
+      : '--';
+  } catch (e) {
+    // silently ignore - dashboard still works without the duty pill
+  }
+}
+
+updateDateLabel();
+updateDutyPill();
+setInterval(updateDateLabel, 30000);
+setInterval(updateDutyPill, 30000);
 
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
@@ -59,50 +77,82 @@ function renderCars() {
   empty.style.display = 'none';
 
   let available = 0, loaned = 0, maintenance = 0;
-
   cars.forEach(car => {
     if (car.status === 'available') available++;
     else if (car.status === 'loaned') loaned++;
     else maintenance++;
-
-    const card = document.createElement('div');
-    card.className = 'car-card';
-
-    let badgeHtml = `<span class="status-badge ${car.status}">${car.status === 'available' ? 'Available' : car.status === 'loaned' ? 'Loaned' : 'Maintenance'}</span>`;
-
-    let loanInfoHtml = '';
-    let actionHtml = '';
-
-    if (car.status === 'loaned' && car.loaned_to_staff_number) {
-      loanInfoHtml = `<div class="loan-info">
-        Loaned to <strong>${car.loaned_to_staff_number} · ${escapeHtml(car.loaned_to_name)}</strong><br>
-        Since ${fmtTime(car.loaned_at)} &middot; ${car.loan_shift || ''}
-      </div>`;
-      actionHtml = `<button class="btn btn-danger btn-block" onclick="openReturnModal(${car.id})">Return this car</button>`;
-    } else if (car.status === 'available') {
-      actionHtml = `<button class="btn btn-primary btn-block" onclick="openLoanModal(${car.id})">Loan this car</button>`;
-    } else {
-      loanInfoHtml = `<div class="loan-info">Not available for loan</div>`;
-    }
-
-    card.innerHTML = `
-      <div class="row1">
-        <div>
-          <div class="car-num">Car #${escapeHtml(car.car_number)}</div>
-          <div class="reg-num">${escapeHtml(car.reg_number)}</div>
-          <div class="allocation">${escapeHtml(car.allocation || '')}</div>
-        </div>
-        ${badgeHtml}
-      </div>
-      ${loanInfoHtml}
-      ${actionHtml}
-    `;
-    grid.appendChild(card);
   });
-
   document.getElementById('countAvailable').textContent = available;
   document.getElementById('countLoaned').textContent = loaned;
   document.getElementById('countMaintenance').textContent = maintenance;
+
+  // Group cars by fixed allocation categories, with an "Unassigned" bucket for anything else
+  const groups = {};
+  ALLOCATIONS.forEach(a => { groups[a] = []; });
+  groups['Unassigned'] = [];
+
+  cars.forEach(car => {
+    const key = ALLOCATIONS.includes(car.allocation) ? car.allocation : 'Unassigned';
+    groups[key].push(car);
+  });
+
+  const orderedKeys = [...ALLOCATIONS, 'Unassigned'];
+
+  orderedKeys.forEach(key => {
+    const carsInGroup = groups[key];
+    if (carsInGroup.length === 0) return;
+
+    const section = document.createElement('div');
+    section.className = 'allocation-section';
+
+    const header = document.createElement('div');
+    header.className = 'allocation-header';
+    header.innerHTML = `<span>${escapeHtml(key)}</span><span class="badge-count">${carsInGroup.length}</span>`;
+    section.appendChild(header);
+
+    const sectionGrid = document.createElement('div');
+    sectionGrid.className = 'car-grid';
+
+    carsInGroup.forEach(car => sectionGrid.appendChild(buildCarCard(car)));
+
+    section.appendChild(sectionGrid);
+    grid.appendChild(section);
+  });
+}
+
+function buildCarCard(car) {
+  const card = document.createElement('div');
+  card.className = 'car-card';
+
+  let badgeHtml = `<span class="status-badge ${car.status}">${car.status === 'available' ? 'Available' : car.status === 'loaned' ? 'Loaned Out' : 'Out of Service'}</span>`;
+
+  let loanInfoHtml = '';
+  let actionHtml = '';
+
+  if (car.status === 'loaned' && car.loaned_to_staff_number) {
+    loanInfoHtml = `<div class="loan-info">
+      Loaned to <strong>${car.loaned_to_staff_number} · ${escapeHtml(car.loaned_to_name)}</strong><br>
+      Since ${fmtTime(car.loaned_at)} &middot; ${car.loan_shift || ''}
+    </div>`;
+    actionHtml = `<button class="btn btn-danger btn-block" onclick="openReturnModal(${car.id})">Return this car</button>`;
+  } else if (car.status === 'available') {
+    actionHtml = `<button class="btn btn-primary btn-block" onclick="openLoanModal(${car.id})">Loan this car</button>`;
+  } else {
+    loanInfoHtml = `<div class="loan-info">Not available for loan</div>`;
+  }
+
+  card.innerHTML = `
+    <div class="row1">
+      <div>
+        <div class="car-num">Car #${escapeHtml(car.car_number)}</div>
+        <div class="reg-num">${escapeHtml(car.reg_number)}</div>
+      </div>
+      ${badgeHtml}
+    </div>
+    ${loanInfoHtml}
+    ${actionHtml}
+  `;
+  return card;
 }
 
 function escapeHtml(str) {
@@ -139,7 +189,6 @@ function resetLoanModal() {
   document.getElementById('loanStaffConfirm').innerHTML = '';
   document.getElementById('newStaffNameField').style.display = 'none';
   document.getElementById('newStaffName').value = '';
-  document.getElementById('loanTeam').value = '';
   document.getElementById('loanError').style.display = 'none';
 }
 
@@ -201,7 +250,6 @@ async function submitLoan() {
 
   const carId = loanTargetCarId || parseInt(document.getElementById('loanCarSelect').value, 10);
   const staffNumber = document.getElementById('loanStaffNumber').value.trim();
-  const team = document.getElementById('loanTeam').value.trim();
 
   if (!carId) { errDiv.textContent = 'No available cars to loan.'; errDiv.style.display = 'block'; return; }
   if (!staffNumber) { errDiv.textContent = 'Enter your staff number.'; errDiv.style.display = 'block'; return; }
@@ -230,7 +278,7 @@ async function submitLoan() {
 
   const res = await fetch('/api/loans/issue', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ car_id: carId, staff_number: staffNumber, staff_name: staffName, team })
+    body: JSON.stringify({ car_id: carId, staff_number: staffNumber, staff_name: staffName })
   });
 
   btn.disabled = false; btn.textContent = 'Confirm loan';

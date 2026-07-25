@@ -1,11 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { getShiftInfo } = require('../shiftUtil');
+const { getShiftInfo, getCurrentDuty } = require('../shiftUtil');
+
+// Current on-duty team + shift, for the dashboard header
+router.get('/duty/current', (req, res) => {
+  res.json(getCurrentDuty(new Date()));
+});
 
 // Issue a car (loan)
 router.post('/issue', (req, res) => {
-  const { car_id, staff_number, staff_name, team } = req.body;
+  const { car_id, staff_number, staff_name } = req.body;
   if (!car_id || !staff_number || !staff_name) {
     return res.status(400).json({ error: 'car_id, staff_number, staff_name are required' });
   }
@@ -16,17 +21,18 @@ router.post('/issue', (req, res) => {
 
   const now = new Date();
   const { shift, shift_date } = getShiftInfo(now);
+  const { team: duty_team } = getCurrentDuty(now);
   const issuedAt = now.toISOString();
 
   const insert = db.prepare(`
-    INSERT INTO loans (car_id, car_number, reg_number, staff_number, staff_name, team, shift, shift_date, issued_at, status)
+    INSERT INTO loans (car_id, car_number, reg_number, staff_number, staff_name, duty_team, shift, shift_date, issued_at, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
   `);
-  const result = insert.run(car.id, car.car_number, car.reg_number, staff_number.trim(), staff_name.trim(), team || null, shift, shift_date, issuedAt);
+  const result = insert.run(car.id, car.car_number, car.reg_number, staff_number.trim(), staff_name.trim(), duty_team, shift, shift_date, issuedAt);
 
   db.prepare(`UPDATE cars SET status = 'loaned' WHERE id = ?`).run(car.id);
 
-  res.json({ success: true, loan_id: result.lastInsertRowid, shift, shift_date, issued_at: issuedAt });
+  res.json({ success: true, loan_id: result.lastInsertRowid, shift, shift_date, duty_team, issued_at: issuedAt });
 });
 
 // Return a car
@@ -55,9 +61,9 @@ router.get('/active', (req, res) => {
   res.json(loans);
 });
 
-// History with filters: date, shift, staff_number, car_number
+// History with filters: date, shift, staff_number, car_number, team
 router.get('/history', (req, res) => {
-  const { date, shift, staff_number, car_number } = req.query;
+  const { date, shift, staff_number, car_number, team } = req.query;
   let query = 'SELECT * FROM loans WHERE 1=1';
   const params = [];
 
@@ -65,6 +71,7 @@ router.get('/history', (req, res) => {
   if (shift) { query += ' AND shift LIKE ?'; params.push(`%${shift}%`); }
   if (staff_number) { query += ' AND staff_number = ?'; params.push(staff_number); }
   if (car_number) { query += ' AND car_number = ?'; params.push(car_number); }
+  if (team) { query += ' AND duty_team = ?'; params.push(team); }
 
   query += ' ORDER BY issued_at DESC';
   const loans = db.prepare(query).all(...params);

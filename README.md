@@ -133,7 +133,49 @@ No header row required. Two columns:
 If a header row is included, the importer will skip a first row that looks like one
 (e.g. contains "staff number").
 
-## Local development (without Docker)
+## Team rotation roster (auto-assigned duty team)
+
+The app tracks a 4-team rotation (Team A/B/C/D), each on an 8-day cycle: 4 days off, 2 day
+shifts, 2 night shifts. It's anchored to the schedule starting **24 July 2026** and repeats
+indefinitely in both directions — no manual entry needed. Every loan automatically records
+which team was on duty at the moment it was issued, and the dashboard header shows the current
+team + shift live. If the actual roster pattern ever changes, the anchor date, template, and
+per-team phase offsets are defined at the top of `backend/shiftUtil.js`.
+
+All shift boundaries (06:00/18:00) and the roster are calculated in **UAE local time (GST,
+UTC+4)** regardless of what timezone the server itself is running in — so this works correctly
+even if your VPS or cPanel host's system clock is set to UTC or another timezone.
+
+## Can this run on cPanel hosting (no Docker)?
+
+Yes, with one condition: your cPanel host needs to offer **"Setup Node.js App"** (a CloudLinux/
+Passenger feature that most modern shared and reseller cPanel hosts include). If you see that
+option in cPanel, here's the outline:
+
+1. In cPanel → **Setup Node.js App** → create an application, choose a Node.js version (18+),
+   set the **Application root** (e.g. `vehicle-app`) and **Application URL**.
+2. Upload the contents of the `backend/` folder into that application root (via File Manager or
+   FTP) — you don't need `node_modules`, Dockerfile, or docker-compose.yml for this route.
+3. In the Node.js App interface, click **Run NPM Install** to install dependencies.
+4. Add an environment variable `ADMIN_PASSWORD` with a real password through the same interface.
+   (Don't set `PORT` — Passenger assigns and manages that for you automatically, and the app
+   already reads `process.env.PORT`.)
+5. Set the **Application startup file** to `server.js` and start/restart the app.
+6. cPanel/Passenger reverse-proxies your domain or subdomain to the app, HTTPS included if you
+   have a certificate on that domain (AutoSSL usually handles this automatically).
+
+One thing to watch for: `better-sqlite3` is a native module — it either downloads a prebuilt
+binary for your server's exact Node version/OS, or compiles from source if no prebuilt matches.
+Most cPanel Node.js environments handle this fine, but some locked-down shared hosts block
+compilation. If `Run NPM Install` fails on `better-sqlite3` specifically, that's the tell — in
+that case, either ask your host to enable build tools, or move to a small VPS (Docker or plain
+Node + PM2), which is the more reliable option long-term.
+
+If your cPanel host does **not** offer "Setup Node.js App" at all, cPanel is really built for
+PHP hosting and isn't a good fit for this app (which needs a persistent Node server, not just
+static files) — in that case a lightweight VPS is the better path.
+
+
 
 ```bash
 cd backend

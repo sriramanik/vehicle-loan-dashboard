@@ -57,7 +57,7 @@
         <div class="toolbar">
           <input class="filter-input" id="newCarNumber" placeholder="Car # (e.g. 02)">
           <input class="filter-input" id="newRegNumber" placeholder="Reg # (e.g. 61228)">
-          <input class="filter-input" id="newAllocation" placeholder="Allocation (e.g. LSM)">
+          <select class="filter-input" id="newAllocation"></select>
           <button class="btn btn-primary btn-sm" onclick="submitAddCar()">Save</button>
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('addCarForm').style.display='none'">Cancel</button>
         </div>
@@ -98,10 +98,12 @@
     <div class="admin-panel" id="panel-records">
       <div class="toolbar">
         <input class="filter-input" type="date" id="filterDate">
-        <select class="filter-input" id="filterShift">
-          <option value="">All shifts</option>
-          <option value="Day">Day (06:00-18:00)</option>
-          <option value="Night">Night (18:00-06:00)</option>
+        <select class="filter-input" id="filterTeam">
+          <option value="">All teams</option>
+          <option value="A">Team A</option>
+          <option value="B">Team B</option>
+          <option value="C">Team C</option>
+          <option value="D">Team D</option>
         </select>
         <input class="filter-input" id="filterStaff" placeholder="Staff #">
         <input class="filter-input" id="filterCar" placeholder="Car #">
@@ -111,12 +113,56 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Shift date</th><th>Shift</th><th>Car</th><th>Team</th>
-            <th>Issued to</th><th>Issued at</th><th>Returned at</th><th>Returned by</th><th>Status</th><th>Actions</th>
+            <th>Shift date</th><th>Shift</th><th>Team</th><th>Car</th>
+            <th>Issued to</th><th>Issued at (GST)</th><th>Returned at (GST)</th><th>Returned by</th><th>Status</th><th>Actions</th>
           </tr></thead>
           <tbody id="recordsTableBody"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT CAR MODAL -->
+<div class="modal-overlay" id="editCarModalOverlay">
+  <div class="modal">
+    <button class="close-x" onclick="closeAdminModal('editCarModalOverlay')">&times;</button>
+    <h2>Edit car</h2>
+    <div class="sub">Update car details</div>
+    <div class="field">
+      <label>Car #</label>
+      <input type="text" id="editCarNumber">
+    </div>
+    <div class="field">
+      <label>Reg #</label>
+      <input type="text" id="editRegNumber">
+    </div>
+    <div class="field">
+      <label>Allocation</label>
+      <select id="editAllocation"></select>
+    </div>
+    <div class="error-msg" id="editCarError" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeAdminModal('editCarModalOverlay')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditCar()">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT STAFF MODAL -->
+<div class="modal-overlay" id="editStaffModalOverlay">
+  <div class="modal">
+    <button class="close-x" onclick="closeAdminModal('editStaffModalOverlay')">&times;</button>
+    <h2>Edit staff</h2>
+    <div class="sub" id="editStaffSub"></div>
+    <div class="field">
+      <label>Name</label>
+      <input type="text" id="editStaffName">
+    </div>
+    <div class="error-msg" id="editStaffError" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeAdminModal('editStaffModalOverlay')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditStaff()">Save changes</button>
     </div>
   </div>
 </div>
