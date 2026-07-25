@@ -18,6 +18,28 @@ company cars from their phones, and admins manage the fleet, staff list, and shi
   - View & filter the full loan history by date, shift, staff number, or car — and export to CSV.
   - "Force return" to correct a record if someone forgot to check a car back in through the app.
 
+## What's new since the first version
+
+- **Admin can return a car directly** — Admin → Cars shows a "Return" button next to any car
+  that's loaned out, for when staff forget to return it through the app. Manual status changes
+  (Available / Out of Service) are only allowed once a car isn't loaned.
+- **Vehicle inspection checklist** — built into the loan flow. Staff confirm exterior/interior
+  condition (defaults to "Yes", flip to "No" if something's wrong), fuel level, and optional
+  damage notes. Stored as structured data with the loan record — viewable anytime from
+  Admin → Records → **View** under the Inspection column.
+- **Car remarks** — anyone on the dashboard can flag an issue on a car (dirty, AC not cooling,
+  etc.) via the "+ Add a remark" link on its card. It shows as a banner on the card for everyone
+  until someone clears it — no login required either way.
+- **Car documents** — Admin → Cars → Edit lets you upload up to 4 documents per car (Insurance,
+  Mulkiya/Registration, Airport Vehicle Permit, Other). Files live on disk under
+  `data/car-documents/`, viewable/downloadable/replaceable from the same screen.
+- **Monthly archives** — Admin → Records has an archive section. Past months can be exported as
+  a CSV snapshot anytime (non-destructive), or "Archived & cleared" — which saves a CSV to disk
+  and removes those completed records from the live database to keep things fast. This also runs
+  **automatically** in the background every few hours for any month that's fully in the past.
+  Archived files are listed and downloadable from the same screen.
+- All timestamps display in local (UAE) time without a confusing timezone label.
+
 ## Project structure
 
 ```

@@ -8,6 +8,10 @@ const ALLOCATIONS = [
   'CABIN TEAM'
 ];
 
+const DOC_TYPES = ['Insurance', 'Mulkiya / Registration', 'Airport Vehicle Permit', 'Other'];
+const EXTERIOR_ITEMS = ['Headlights', 'Taillights', 'Beacon Lights', 'Brake Lights', 'Turn Signals', 'Windshield Condition', 'Tyres Condition', 'Tow Hitch Condition/Locking'];
+const INTERIOR_ITEMS = ['Seat Belts', 'Dashboard Condition', 'Seats Condition', 'Cleanliness', 'AC Cooling'];
+
 let editingCarId = null;
 let editingStaffNumber = null;
 
@@ -36,7 +40,7 @@ function escapeHtml(str) {
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
-  return d.toLocaleString('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' GST';
+  return d.toLocaleString('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 async function adminFetch(url, options = {}) {
@@ -63,6 +67,8 @@ function showApp() {
   loadCars();
   loadStaff();
   loadRecords();
+  loadMonthsList();
+  loadArchiveFilesList();
 }
 
 async function login() {
@@ -127,12 +133,14 @@ async function submitAddCar() {
   });
 
   if (res.ok) {
-    showToast('Car added');
+    const data = await res.json();
+    showToast('Car added - add documents below if needed');
     document.getElementById('newCarNumber').value = '';
     document.getElementById('newRegNumber').value = '';
     document.getElementById('newAllocation').value = '';
     document.getElementById('addCarForm').style.display = 'none';
-    loadCars();
+    await loadCars();
+    openEditCarModal(data.id); // jump straight into edit so docs can be attached right away
   } else {
     const err = await res.json();
     showToast(err.error || 'Failed to add car', 'error');
@@ -140,6 +148,7 @@ async function submitAddCar() {
 }
 
 let allCarsCache = [];
+let docsCountCache = {};
 
 async function loadCars() {
   const res = await adminFetch('/api/admin/cars');
@@ -152,31 +161,55 @@ async function loadCars() {
   const loanMap = {};
   carsWithLoans.forEach(c => { loanMap[c.id] = c; });
 
+  // fetch document counts for the documents column
+  await Promise.all(cars.map(async car => {
+    try {
+      const dres = await adminFetch(`/api/admin/cars/${car.id}/documents`);
+      const data = await dres.json();
+      docsCountCache[car.id] = data.documents.length;
+    } catch (e) {
+      docsCountCache[car.id] = docsCountCache[car.id] ?? 0;
+    }
+  }));
+
   const tbody = document.getElementById('carsTableBody');
   tbody.innerHTML = cars.map(car => {
     const withLoan = loanMap[car.id] || {};
     const loanedTo = car.status === 'loaned' && withLoan.loaned_to_staff_number
       ? `${escapeHtml(withLoan.loaned_to_staff_number)} · ${escapeHtml(withLoan.loaned_to_name)}` : '—';
+
+    let statusCell;
+    if (car.status === 'loaned') {
+      statusCell = `
+        <span class="status-badge loaned">Loaned Out</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:6px;" onclick="returnCarAdmin(${car.id})">Return</button>
+      `;
+    } else {
+      statusCell = `
+        <select class="filter-input" onchange="updateCarStatus(${car.id}, this.value)">
+          <option value="available" ${car.status === 'available' ? 'selected' : ''}>Available</option>
+          <option value="maintenance" ${car.status === 'maintenance' ? 'selected' : ''}>Out of Service</option>
+        </select>
+      `;
+    }
+
+    const docCount = docsCountCache[car.id] ?? 0;
+
     return `
       <tr>
         <td>${escapeHtml(car.car_number)}</td>
         <td>${escapeHtml(car.reg_number)}</td>
         <td>${escapeHtml(car.allocation || '')}</td>
-        <td>
-          <select class="filter-input" onchange="updateCarStatus(${car.id}, this.value)" ${car.status === 'loaned' ? 'disabled' : ''}>
-            <option value="available" ${car.status === 'available' ? 'selected' : ''}>Available</option>
-            <option value="maintenance" ${car.status === 'maintenance' ? 'selected' : ''}>Out of Service</option>
-            <option value="loaned" ${car.status === 'loaned' ? 'selected' : ''}>Loaned Out</option>
-          </select>
-        </td>
+        <td style="white-space:nowrap;">${statusCell}</td>
         <td>${loanedTo}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="openEditCarModal(${car.id})">${docCount}/4 &middot; view</button></td>
         <td style="white-space:nowrap;">
           <button class="btn btn-outline btn-sm" onclick="openEditCarModal(${car.id})">Edit</button>
           <button class="btn btn-outline btn-sm" onclick="deleteCar(${car.id})">Delete</button>
         </td>
       </tr>
     `;
-  }).join('') || `<tr><td colspan="6" style="text-align:center; color:var(--text-dim);">No cars yet</td></tr>`;
+  }).join('') || `<tr><td colspan="7" style="text-align:center; color:var(--text-dim);">No cars yet</td></tr>`;
 }
 
 function openEditCarModal(carId) {
@@ -188,6 +221,7 @@ function openEditCarModal(carId) {
   document.getElementById('editAllocation').value = car.allocation || ALLOCATIONS[0];
   document.getElementById('editCarError').style.display = 'none';
   document.getElementById('editCarModalOverlay').classList.add('open');
+  loadCarDocuments(carId);
 }
 
 async function submitEditCar() {
@@ -227,11 +261,95 @@ async function updateCarStatus(id, status) {
   loadCars();
 }
 
+async function returnCarAdmin(id) {
+  if (!confirm('Mark this car as returned? Use this if a staff member forgot to return it through the app.')) return;
+  const res = await adminFetch(`/api/admin/cars/${id}/return`, { method: 'POST' });
+  if (res.ok) {
+    showToast('Car marked as returned');
+    loadCars();
+    loadRecords();
+  } else {
+    const err = await res.json();
+    showToast(err.error || 'Failed to return car', 'error');
+  }
+}
+
 async function deleteCar(id) {
   if (!confirm('Delete this car? This cannot be undone.')) return;
   const res = await adminFetch(`/api/admin/cars/${id}`, { method: 'DELETE' });
   if (res.ok) { showToast('Car deleted'); loadCars(); }
   else { const err = await res.json(); showToast(err.error || 'Delete failed', 'error'); }
+}
+
+// ---------------- CAR DOCUMENTS ----------------
+async function loadCarDocuments(carId) {
+  const container = document.getElementById('carDocumentsList');
+  container.innerHTML = '<div class="sub">Loading...</div>';
+  const res = await adminFetch(`/api/admin/cars/${carId}/documents`);
+  const data = await res.json();
+  const byType = {};
+  data.documents.forEach(d => { byType[d.doc_type] = d; });
+  docsCountCache[carId] = data.documents.length;
+
+  container.innerHTML = DOC_TYPES.map(type => {
+    const doc = byType[type];
+    const inputId = `docfile_${type.replace(/[^a-z0-9]/gi, '_')}`;
+    return `
+      <div class="doc-row">
+        <div class="doc-type-label">${type}</div>
+        ${doc
+          ? `<div class="doc-status">${escapeHtml(doc.original_name)}</div>
+             <div class="doc-actions">
+               <button class="btn btn-outline btn-sm" onclick="downloadCarDocument(${carId}, '${type}')">View</button>
+               <button class="btn btn-outline btn-sm" onclick="deleteCarDocument(${carId}, '${type}')">Remove</button>
+             </div>`
+          : `<input type="file" id="${inputId}">
+             <button class="btn btn-primary btn-sm" onclick="uploadCarDocument(${carId}, '${type}', '${inputId}')">Upload</button>`
+        }
+      </div>
+    `;
+  }).join('');
+}
+
+async function uploadCarDocument(carId, docType, inputId) {
+  const fileInput = document.getElementById(inputId);
+  const file = fileInput.files[0];
+  if (!file) return showToast('Choose a file first', 'error');
+
+  const formData = new FormData();
+  formData.append('doc_type', docType);
+  formData.append('file', file);
+
+  const res = await adminFetch(`/api/admin/cars/${carId}/documents`, { method: 'POST', body: formData });
+  if (res.ok) {
+    showToast('Document uploaded');
+    loadCarDocuments(carId);
+    loadCars();
+  } else {
+    const err = await res.json();
+    showToast(err.error || 'Upload failed', 'error');
+  }
+}
+
+async function downloadCarDocument(carId, docType) {
+  const res = await adminFetch(`/api/admin/cars/${carId}/documents/${encodeURIComponent(docType)}/file`);
+  if (!res.ok) return showToast('Could not open document', 'error');
+  const blob = await res.blob();
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.target = '_blank';
+  link.download = '';
+  link.click();
+}
+
+async function deleteCarDocument(carId, docType) {
+  if (!confirm(`Remove the ${docType} document?`)) return;
+  const res = await adminFetch(`/api/admin/cars/${carId}/documents/${encodeURIComponent(docType)}`, { method: 'DELETE' });
+  if (res.ok) {
+    showToast('Document removed');
+    loadCarDocuments(carId);
+    loadCars();
+  }
 }
 
 // ---------------- STAFF ----------------
@@ -330,6 +448,8 @@ async function importCsv(event) {
 }
 
 // ---------------- RECORDS ----------------
+let allRecordsCache = [];
+
 async function loadRecords() {
   const date = document.getElementById('filterDate').value;
   const team = document.getElementById('filterTeam').value;
@@ -344,6 +464,7 @@ async function loadRecords() {
 
   const res = await adminFetch(`/api/admin/loans?${params.toString()}`);
   const loans = await res.json();
+  allRecordsCache = loans;
 
   const tbody = document.getElementById('recordsTableBody');
   tbody.innerHTML = loans.map(l => `
@@ -357,15 +478,41 @@ async function loadRecords() {
       <td>${fmtTime(l.returned_at)}</td>
       <td>${l.returned_by_staff_number ? escapeHtml(l.returned_by_staff_number) + ' · ' + escapeHtml(l.returned_by_name) : '—'}</td>
       <td><span class="status-badge ${l.status === 'active' ? 'loaned' : 'available'}">${l.status === 'active' ? 'Loaned Out' : 'Returned'}</span></td>
-      <td>${l.status === 'active' ? `<button class="btn btn-outline btn-sm" onclick="forceReturn(${l.id})">Force return</button>` : '—'}</td>
+      <td>${l.inspection_data ? `<button class="btn btn-outline btn-sm" onclick="viewInspection(${l.id})">View</button>` : '—'}</td>
     </tr>
   `).join('') || `<tr><td colspan="10" style="text-align:center; color:var(--text-dim);">No records found</td></tr>`;
 }
 
-async function forceReturn(loanId) {
-  if (!confirm('Mark this loan as returned? Use this only to correct a record.')) return;
-  const res = await adminFetch(`/api/admin/loans/${loanId}/force-return`, { method: 'POST' });
-  if (res.ok) { showToast('Marked as returned'); loadRecords(); loadCars(); }
+function viewInspection(loanId) {
+  const loan = allRecordsCache.find(l => l.id === loanId);
+  if (!loan || !loan.inspection_data) return;
+  let data;
+  try { data = JSON.parse(loan.inspection_data); } catch (e) { return showToast('Could not read inspection data', 'error'); }
+
+  document.getElementById('inspectionSub').textContent = `Car #${loan.car_number} · ${loan.reg_number} — ${loan.staff_number} · ${loan.staff_name} — ${fmtTime(loan.issued_at)}`;
+
+  const renderGroup = (title, items, values) => `
+    <div class="checklist-section">
+      <div class="checklist-title">${title}</div>
+      ${items.map(item => {
+        const v = (values && values[item]) || 'n/a';
+        const cls = v === 'no' ? 'no' : 'yes';
+        return `<div class="checklist-item"><span class="item-label">${item}</span><span class="status-badge ${v === 'no' ? 'loaned' : 'available'}">${v.toUpperCase()}</span></div>`;
+      }).join('')}
+    </div>
+  `;
+
+  document.getElementById('inspectionContent').innerHTML = `
+    ${renderGroup('Exterior', EXTERIOR_ITEMS, data.exterior)}
+    ${renderGroup('Interior', INTERIOR_ITEMS, data.interior)}
+    <div class="checklist-section">
+      <div class="checklist-title">Fuel quantity at pickup</div>
+      <div style="font-size:14px;">${data.fuel_level || 'n/a'}</div>
+    </div>
+    ${data.remarks ? `<div class="checklist-section"><div class="checklist-title">Damage / notes</div><div style="font-size:13.5px; color:var(--text-dim);">${escapeHtml(data.remarks)}</div></div>` : ''}
+  `;
+
+  document.getElementById('inspectionModalOverlay').classList.add('open');
 }
 
 function exportCsv() {
@@ -376,12 +523,96 @@ function exportCsv() {
   if (team) params.set('team', team);
   const url = `/api/admin/loans/export?${params.toString()}`;
 
-  // fetch with auth header then trigger download
   adminFetch(url).then(async res => {
     const blob = await res.blob();
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = 'vehicle_loans_export.csv';
+    link.click();
+  });
+}
+
+// ---------------- MONTHLY ARCHIVES ----------------
+async function loadMonthsList() {
+  const res = await adminFetch('/api/admin/archives/months');
+  const months = await res.json();
+  const container = document.getElementById('monthsList');
+
+  if (months.length === 0) {
+    container.innerHTML = `<div class="sub">No records yet.</div>`;
+    return;
+  }
+
+  container.innerHTML = months.map(m => `
+    <div class="archive-row">
+      <div>
+        <strong>${m.month}</strong>
+        <span class="archive-meta">&nbsp;·&nbsp;${m.total} record(s)${m.active_count ? `, ${m.active_count} still active` : ''}${m.is_current_month ? ' · current month' : ''}${m.archive_file_exists ? ' · already archived' : ''}</span>
+      </div>
+      <div class="archive-actions">
+        <button class="btn btn-outline btn-sm" onclick="exportMonthSnapshot('${m.month}')">Download CSV</button>
+        ${!m.is_current_month && m.returned_count > 0
+          ? `<button class="btn btn-primary btn-sm" onclick="archiveMonth('${m.month}')">Archive & clear</button>`
+          : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function exportMonthSnapshot(month) {
+  adminFetch(`/api/admin/archives/export/${month}`).then(async res => {
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `vehicle_loans_${month}.csv`;
+    link.click();
+  });
+}
+
+async function archiveMonth(month) {
+  if (!confirm(`Archive ${month} to a CSV file and remove those completed records from the live system? This can't be undone (the CSV will still be downloadable afterwards).`)) return;
+  const res = await adminFetch(`/api/admin/archives/${month}/create`, { method: 'POST' });
+  if (res.ok) {
+    const data = await res.json();
+    showToast(data.archived > 0 ? `Archived ${data.archived} record(s) for ${month}` : `No completed records to archive for ${month}`);
+    loadMonthsList();
+    loadArchiveFilesList();
+    loadRecords();
+  } else {
+    const err = await res.json();
+    showToast(err.error || 'Archive failed', 'error');
+  }
+}
+
+async function loadArchiveFilesList() {
+  const res = await adminFetch('/api/admin/archives/files');
+  const files = await res.json();
+  const container = document.getElementById('archiveFilesList');
+
+  if (files.length === 0) {
+    container.innerHTML = `<div class="sub">No archived files yet.</div>`;
+    return;
+  }
+
+  container.innerHTML = files.map(f => `
+    <div class="archive-row">
+      <div>
+        <strong>${f.filename}</strong>
+        <span class="archive-meta">&nbsp;·&nbsp;${(f.size_bytes / 1024).toFixed(1)} KB</span>
+      </div>
+      <div class="archive-actions">
+        <button class="btn btn-outline btn-sm" onclick="downloadArchiveFile('${f.filename}')">Download</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function downloadArchiveFile(filename) {
+  adminFetch(`/api/admin/archives/files/${filename}`).then(async res => {
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
     link.click();
   });
 }

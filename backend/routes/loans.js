@@ -10,7 +10,7 @@ router.get('/duty/current', (req, res) => {
 
 // Issue a car (loan)
 router.post('/issue', (req, res) => {
-  const { car_id, staff_number, staff_name } = req.body;
+  const { car_id, staff_number, staff_name, inspection } = req.body;
   if (!car_id || !staff_number || !staff_name) {
     return res.status(400).json({ error: 'car_id, staff_number, staff_name are required' });
   }
@@ -23,12 +23,13 @@ router.post('/issue', (req, res) => {
   const { shift, shift_date } = getShiftInfo(now);
   const { team: duty_team } = getCurrentDuty(now);
   const issuedAt = now.toISOString();
+  const inspectionJson = inspection ? JSON.stringify(inspection) : null;
 
   const insert = db.prepare(`
-    INSERT INTO loans (car_id, car_number, reg_number, staff_number, staff_name, duty_team, shift, shift_date, issued_at, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+    INSERT INTO loans (car_id, car_number, reg_number, staff_number, staff_name, duty_team, shift, shift_date, issued_at, status, inspection_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
   `);
-  const result = insert.run(car.id, car.car_number, car.reg_number, staff_number.trim(), staff_name.trim(), duty_team, shift, shift_date, issuedAt);
+  const result = insert.run(car.id, car.car_number, car.reg_number, staff_number.trim(), staff_name.trim(), duty_team, shift, shift_date, issuedAt, inspectionJson);
 
   db.prepare(`UPDATE cars SET status = 'loaned' WHERE id = ?`).run(car.id);
 

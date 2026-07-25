@@ -21,4 +21,35 @@ router.get('/available', (req, res) => {
   res.json(cars);
 });
 
+// Add or replace a remark on a car (open to anyone using the dashboard - matches the paper
+// process where any staff member could flag an issue on the sheet)
+router.put('/:id/remark', (req, res) => {
+  const { staff_number, staff_name, remark_text } = req.body;
+  if (!remark_text || !remark_text.trim()) {
+    return res.status(400).json({ error: 'remark_text is required' });
+  }
+  const car = db.prepare('SELECT * FROM cars WHERE id = ?').get(req.params.id);
+  if (!car) return res.status(404).json({ error: 'Car not found' });
+
+  db.prepare(`
+    UPDATE cars SET remark_text = ?, remark_by_staff_number = ?, remark_by_name = ?, remark_at = ?
+    WHERE id = ?
+  `).run(remark_text.trim(), staff_number || null, staff_name || null, new Date().toISOString(), car.id);
+
+  res.json({ success: true });
+});
+
+// Clear a remark from a car
+router.delete('/:id/remark', (req, res) => {
+  const car = db.prepare('SELECT * FROM cars WHERE id = ?').get(req.params.id);
+  if (!car) return res.status(404).json({ error: 'Car not found' });
+
+  db.prepare(`
+    UPDATE cars SET remark_text = NULL, remark_by_staff_number = NULL, remark_by_name = NULL, remark_at = NULL
+    WHERE id = ?
+  `).run(car.id);
+
+  res.json({ success: true });
+});
+
 module.exports = router;

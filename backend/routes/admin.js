@@ -1,17 +1,33 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 const { parse } = require('csv-parse/sync');
 const db = require('../db');
 const adminAuth = require('../adminAuth');
+const archiveUtil = require('../archiveUtil');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-function formatUAE(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleString('en-GB', { timeZone: 'Asia/Dubai', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' GST';
-}
+const DOC_TYPES = ['Insurance', 'Mulkiya / Registration', 'Airport Vehicle Permit', 'Other'];
+
+// Documents are stored on disk under data/car-documents/<car_id>/
+const docsUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const carDir = path.join(db.docsDir, String(req.params.id));
+      if (!fs.existsSync(carDir)) fs.mkdirSync(carDir, { recursive: true });
+      cb(null, carDir);
+    },
+    filename: (req, file, cb) => {
+      const safeType = (req.body.doc_type || 'document').replace(/[^a-z0-9]/gi, '_');
+      const ext = path.extname(file.originalname) || '';
+      cb(null, `${safeType}_${Date.now()}${ext}`);
+    }
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB per document
+});
 
 // Login (just validates password against env var)
 router.post('/login', (req, res) => {
@@ -45,10 +61,16 @@ router.put('/cars/:id', (req, res) => {
   const car = db.prepare('SELECT * FROM cars WHERE id = ?').get(req.params.id);
   if (!car) return res.status(404).json({ error: 'Car not found' });
 
-  // If forcing status to maintenance while there's an active loan, block it
-  if (status === 'maintenance' && car.status === 'loaned') {
-    const activeLoan = db.prepare(`SELECT * FROM loans WHERE car_id = ? AND status='active'`).get(car.id);
-    if (activeLoan) return res.status(409).json({ error: 'Car currently on loan. Return it before setting to maintenance.' });
+  // Status can only be changed manually between available/maintenance.
+  // 'loaned' is only ever set by the loan-issue flow, and a car must be returned
+  // (via /cars/:id/return) before its status can be changed away from 'loaned'.
+  if (status !== undefined) {
+    if (status === 'loaned') {
+      return res.status(400).json({ error: "Status can't be set to Loaned Out directly - that happens automatically when a car is loaned." });
+    }
+    if (car.status === 'loaned') {
+      return res.status(409).json({ error: 'This car is currently loaned out. Return it first.' });
+    }
   }
 
   db.prepare(`
@@ -63,10 +85,84 @@ router.put('/cars/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Admin return: close out the active loan on this car (staff forgot to return it in the app)
+router.post('/cars/:id/return', (req, res) => {
+  const car = db.prepare('SELECT * FROM cars WHERE id = ?').get(req.params.id);
+  if (!car) return res.status(404).json({ error: 'Car not found' });
+
+  const loan = db.prepare(`SELECT * FROM loans WHERE car_id = ? AND status = 'active'`).get(car.id);
+  if (!loan) {
+    // No active loan on record - just make sure the car isn't stuck in 'loaned' status
+    db.prepare(`UPDATE cars SET status = 'available' WHERE id = ?`).run(car.id);
+    return res.json({ success: true, note: 'No active loan found - car status reset to available.' });
+  }
+
+  const returnedAt = new Date().toISOString();
+  db.prepare(`
+    UPDATE loans SET status = 'returned', returned_at = ?, returned_by_staff_number = ?, returned_by_name = ?
+    WHERE id = ?
+  `).run(returnedAt, loan.staff_number, loan.staff_name, loan.id);
+  db.prepare(`UPDATE cars SET status = 'available' WHERE id = ?`).run(car.id);
+
+  res.json({ success: true, returned_at: returnedAt });
+});
+
 router.delete('/cars/:id', (req, res) => {
   const activeLoan = db.prepare(`SELECT * FROM loans WHERE car_id = ? AND status='active'`).get(req.params.id);
   if (activeLoan) return res.status(409).json({ error: 'Cannot delete a car that is currently on loan' });
   db.prepare('DELETE FROM cars WHERE id = ?').run(req.params.id);
+  // clean up any uploaded documents for this car
+  const carDir = path.join(db.docsDir, String(req.params.id));
+  if (fs.existsSync(carDir)) fs.rmSync(carDir, { recursive: true, force: true });
+  res.json({ success: true });
+});
+
+// ---- CAR DOCUMENTS ----
+router.get('/cars/:id/documents', (req, res) => {
+  const docs = db.prepare('SELECT * FROM car_documents WHERE car_id = ?').all(req.params.id);
+  res.json({ doc_types: DOC_TYPES, documents: docs });
+});
+
+router.post('/cars/:id/documents', docsUpload.single('file'), (req, res) => {
+  const car = db.prepare('SELECT * FROM cars WHERE id = ?').get(req.params.id);
+  if (!car) return res.status(404).json({ error: 'Car not found' });
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const docType = req.body.doc_type;
+  if (!DOC_TYPES.includes(docType)) {
+    return res.status(400).json({ error: 'Invalid document type' });
+  }
+
+  // remove any previous file for this car+doc_type before recording the new one
+  const existing = db.prepare('SELECT * FROM car_documents WHERE car_id = ? AND doc_type = ?').get(car.id, docType);
+  if (existing) {
+    const oldPath = path.join(db.docsDir, String(car.id), existing.stored_filename);
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+
+  db.prepare(`
+    INSERT INTO car_documents (car_id, doc_type, original_name, stored_filename)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(car_id, doc_type) DO UPDATE SET original_name = excluded.original_name, stored_filename = excluded.stored_filename, uploaded_at = datetime('now')
+  `).run(car.id, docType, req.file.originalname, req.file.filename);
+
+  res.json({ success: true });
+});
+
+router.get('/cars/:id/documents/:docType/file', (req, res) => {
+  const doc = db.prepare('SELECT * FROM car_documents WHERE car_id = ? AND doc_type = ?').get(req.params.id, req.params.docType);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  const filePath = path.join(db.docsDir, String(req.params.id), doc.stored_filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing on disk' });
+  res.download(filePath, doc.original_name);
+});
+
+router.delete('/cars/:id/documents/:docType', (req, res) => {
+  const doc = db.prepare('SELECT * FROM car_documents WHERE car_id = ? AND doc_type = ?').get(req.params.id, req.params.docType);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  const filePath = path.join(db.docsDir, String(req.params.id), doc.stored_filename);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  db.prepare('DELETE FROM car_documents WHERE id = ?').run(doc.id);
   res.json({ success: true });
 });
 
@@ -89,7 +185,8 @@ router.post('/staff', (req, res) => {
 
 router.put('/staff/:staffNumber', (req, res) => {
   const { name } = req.body;
-  db.prepare('UPDATE staff SET name = ? WHERE staff_number = ?').run(name, req.params.staffNumber);
+  if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+  db.prepare('UPDATE staff SET name = ? WHERE staff_number = ?').run(name.trim(), req.params.staffNumber);
   res.json({ success: true });
 });
 
@@ -131,7 +228,7 @@ router.post('/staff/import', upload.single('file'), (req, res) => {
 
 // ---- LOANS (history / manual correction) ----
 router.get('/loans', (req, res) => {
-  const { date, shift, staff_number, car_number, status, team } = req.query;
+  const { date, shift, staff_number, car_number, status, team, month } = req.query;
   let query = 'SELECT * FROM loans WHERE 1=1';
   const params = [];
   if (date) { query += ' AND shift_date = ?'; params.push(date); }
@@ -140,44 +237,67 @@ router.get('/loans', (req, res) => {
   if (car_number) { query += ' AND car_number = ?'; params.push(car_number); }
   if (status) { query += ' AND status = ?'; params.push(status); }
   if (team) { query += ' AND duty_team = ?'; params.push(team); }
+  if (month) { query += ' AND shift_date LIKE ?'; params.push(`${month}%`); }
   query += ' ORDER BY issued_at DESC';
   res.json(db.prepare(query).all(...params));
 });
 
-// Manual force-return (admin correction, e.g. staff forgot to return in system)
-router.post('/loans/:id/force-return', (req, res) => {
-  const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
-  if (!loan) return res.status(404).json({ error: 'Loan not found' });
-  const returnedAt = new Date().toISOString();
-  db.prepare(`
-    UPDATE loans SET status='returned', returned_at=?, returned_by_staff_number=?, returned_by_name=?
-    WHERE id = ?
-  `).run(returnedAt, loan.staff_number, loan.staff_name, loan.id);
-  db.prepare(`UPDATE cars SET status='available' WHERE id = ?`).run(loan.car_id);
-  res.json({ success: true });
-});
-
-// Export CSV
+// Export CSV (optionally filtered by date/team/month)
 router.get('/loans/export', (req, res) => {
-  const { date, shift, team } = req.query;
+  const { date, shift, team, month } = req.query;
   let query = 'SELECT * FROM loans WHERE 1=1';
   const params = [];
   if (date) { query += ' AND shift_date = ?'; params.push(date); }
   if (shift) { query += ' AND shift LIKE ?'; params.push(`%${shift}%`); }
   if (team) { query += ' AND duty_team = ?'; params.push(team); }
+  if (month) { query += ' AND shift_date LIKE ?'; params.push(`${month}%`); }
   query += ' ORDER BY issued_at DESC';
   const loans = db.prepare(query).all(...params);
-
-  const header = ['Shift Date','Shift','Team','Car #','Reg #','Issued To (Staff #)','Issued To (Name)','Issued At (UAE)','Returned At (UAE)','Returned By (Staff #)','Returned By (Name)','Status'];
-  const rows = loans.map(l => [
-    l.shift_date, l.shift, l.duty_team || '', l.car_number, l.reg_number,
-    l.staff_number, l.staff_name, formatUAE(l.issued_at), formatUAE(l.returned_at), l.returned_by_staff_number || '', l.returned_by_name || '', l.status
-  ]);
-  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const csv = archiveUtil.buildCsv(loans);
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="vehicle_loans_export.csv"`);
   res.send(csv);
+});
+
+// ---- MONTHLY ARCHIVES ----
+
+// List months present in the DB with counts + whether an archive file already exists
+router.get('/archives/months', (req, res) => {
+  res.json(archiveUtil.listMonths());
+});
+
+// Download a snapshot CSV for a month without deleting anything
+router.get('/archives/export/:month', (req, res) => {
+  if (!/^\d{4}-\d{2}$/.test(req.params.month)) return res.status(400).json({ error: 'Invalid month format, expected YYYY-MM' });
+  const csv = archiveUtil.exportMonthCsv(req.params.month);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="vehicle_loans_${req.params.month}.csv"`);
+  res.send(csv);
+});
+
+// Archive a past month to disk and delete its (returned) records from the live DB
+router.post('/archives/:month/create', (req, res) => {
+  if (!/^\d{4}-\d{2}$/.test(req.params.month)) return res.status(400).json({ error: 'Invalid month format, expected YYYY-MM' });
+  try {
+    const result = archiveUtil.archiveAndClearMonth(req.params.month);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// List archived CSV files on disk
+router.get('/archives/files', (req, res) => {
+  res.json(archiveUtil.listArchiveFiles());
+});
+
+// Download a previously archived file
+router.get('/archives/files/:filename', (req, res) => {
+  if (!/^\d{4}-\d{2}\.csv$/.test(req.params.filename)) return res.status(400).json({ error: 'Invalid filename' });
+  const filePath = archiveUtil.archiveFilePath(req.params.filename.replace('.csv', ''));
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Archive file not found' });
+  res.download(filePath, req.params.filename);
 });
 
 module.exports = router;

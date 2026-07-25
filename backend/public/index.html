@@ -41,7 +41,7 @@
     </div>
   </div>
 
-  <div id="carGrid" class="car-grid"></div>
+  <div id="carGrid" class="allocation-board"></div>
   <div id="emptyState" class="empty-state" style="display:none;">No cars set up yet. Go to Admin to add cars.</div>
 
 </div>
@@ -68,6 +68,29 @@
     <div class="field" id="newStaffNameField" style="display:none;">
       <label>Your name (staff number not found)</label>
       <input type="text" id="newStaffName" placeholder="Full name">
+    </div>
+
+    <div class="collapsible-toggle" id="inspectionToggle" onclick="toggleInspection()">
+      <span>Vehicle inspection checklist</span>
+      <span class="chev">&#9660;</span>
+    </div>
+    <div class="collapsible-body" id="inspectionBody">
+      <div class="checklist-section">
+        <div class="checklist-title">Exterior</div>
+        <div id="exteriorChecklist"></div>
+      </div>
+      <div class="checklist-section">
+        <div class="checklist-title">Interior</div>
+        <div id="interiorChecklist"></div>
+      </div>
+      <div class="checklist-section">
+        <div class="checklist-title">Fuel quantity</div>
+        <div class="fuel-selector" id="fuelSelector"></div>
+      </div>
+      <div class="field">
+        <label>New external damages / dents / notes (optional)</label>
+        <input type="text" id="inspectionRemarks" placeholder="e.g. small scratch on rear bumper">
+      </div>
     </div>
 
     <div class="error-msg" id="loanError" style="display:none;"></div>
@@ -105,6 +128,34 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- REMARK MODAL -->
+<div class="modal-overlay" id="remarkModalOverlay">
+  <div class="modal">
+    <button class="close-x" onclick="closeModal('remarkModalOverlay')">&times;</button>
+    <h2>Car remark</h2>
+    <div class="sub" id="remarkCarSub"></div>
+
+    <div id="currentRemarkBlock"></div>
+
+    <div id="addRemarkBlock">
+      <div class="field">
+        <label>Your staff number</label>
+        <input type="text" id="remarkStaffNumber" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
+      </div>
+      <div id="remarkStaffConfirm"></div>
+      <div class="field">
+        <label>Remark</label>
+        <input type="text" id="remarkText" placeholder="e.g. AC not cooling, car needs cleaning...">
+      </div>
+      <div class="error-msg" id="remarkError" style="display:none;"></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeModal('remarkModalOverlay')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitRemark()">Save remark</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="js/app.js"></script>
 </body>

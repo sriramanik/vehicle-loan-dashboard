@@ -16,7 +16,7 @@
     <h2 style="margin-bottom:6px;">Admin login</h2>
     <div class="sub" style="color:var(--text-dim); font-size:13px; margin-bottom:18px;">Enter the admin password to continue</div>
     <div class="field" style="text-align:left;">
-      <input type="password" id="passwordInput" placeholder="Password" style="width:100%;">
+      <input type="password" id="passwordInput" placeholder="Password" style="width:100%;" onkeydown="if(event.key==='Enter'){ event.preventDefault(); login(); }">
     </div>
     <div class="error-msg" id="loginError" style="display:none;"></div>
     <button class="btn btn-primary btn-block" onclick="login()">Log in</button>
@@ -65,7 +65,7 @@
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Car #</th><th>Reg #</th><th>Allocation</th><th>Status</th><th>Loaned to</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Car #</th><th>Reg #</th><th>Allocation</th><th>Status</th><th>Loaned to</th><th>Documents</th><th>Actions</th></tr></thead>
           <tbody id="carsTableBody"></tbody>
         </table>
       </div>
@@ -114,10 +114,23 @@
         <table>
           <thead><tr>
             <th>Shift date</th><th>Shift</th><th>Team</th><th>Car</th>
-            <th>Issued to</th><th>Issued at (GST)</th><th>Returned at (GST)</th><th>Returned by</th><th>Status</th><th>Actions</th>
+            <th>Issued to</th><th>Issued at</th><th>Returned at</th><th>Returned by</th><th>Status</th><th>Inspection</th>
           </tr></thead>
           <tbody id="recordsTableBody"></tbody>
         </table>
+      </div>
+
+      <div style="margin-top:28px;">
+        <h2 style="font-size:15px; margin-bottom:4px;">Monthly archives</h2>
+        <div class="sub" style="color:var(--text-dim); font-size:12.5px; margin-bottom:14px;">
+          Past months are archived to a CSV file automatically and removed from the live records to
+          keep things fast. You can also archive a month manually, or just download a snapshot without
+          deleting anything.
+        </div>
+        <div id="monthsList"></div>
+
+        <h3 style="font-size:13px; margin: 18px 0 8px; color:var(--text-dim);">Archived files</h3>
+        <div id="archiveFilesList"></div>
       </div>
     </div>
   </div>
@@ -146,6 +159,11 @@
       <button class="btn btn-outline" onclick="closeAdminModal('editCarModalOverlay')">Cancel</button>
       <button class="btn btn-primary" onclick="submitEditCar()">Save changes</button>
     </div>
+
+    <div style="margin-top:22px; padding-top:16px; border-top:1px solid var(--border);">
+      <h2 style="font-size:15px; margin-bottom:10px;">Documents</h2>
+      <div id="carDocumentsList"></div>
+    </div>
   </div>
 </div>
 
@@ -164,6 +182,16 @@
       <button class="btn btn-outline" onclick="closeAdminModal('editStaffModalOverlay')">Cancel</button>
       <button class="btn btn-primary" onclick="submitEditStaff()">Save changes</button>
     </div>
+  </div>
+</div>
+
+<!-- INSPECTION VIEW MODAL -->
+<div class="modal-overlay" id="inspectionModalOverlay">
+  <div class="modal">
+    <button class="close-x" onclick="closeAdminModal('inspectionModalOverlay')">&times;</button>
+    <h2>Vehicle inspection</h2>
+    <div class="sub" id="inspectionSub"></div>
+    <div id="inspectionContent"></div>
   </div>
 </div>
 

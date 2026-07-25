@@ -5,6 +5,12 @@ const fs = require('fs');
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+const archivesDir = path.join(dataDir, 'archives');
+if (!fs.existsSync(archivesDir)) fs.mkdirSync(archivesDir, { recursive: true });
+
+const docsDir = path.join(dataDir, 'car-documents');
+if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
+
 const db = new Database(path.join(dataDir, 'vehicle_loans.db'));
 db.pragma('journal_mode = WAL');
 
@@ -15,6 +21,10 @@ CREATE TABLE IF NOT EXISTS cars (
   reg_number TEXT NOT NULL,
   allocation TEXT,
   status TEXT NOT NULL DEFAULT 'available', -- available | loaned | maintenance
+  remark_text TEXT,
+  remark_by_staff_number TEXT,
+  remark_by_name TEXT,
+  remark_at TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -40,15 +50,36 @@ CREATE TABLE IF NOT EXISTS loans (
   returned_by_staff_number TEXT,
   returned_by_name TEXT,
   status TEXT NOT NULL DEFAULT 'active', -- active | returned
+  inspection_data TEXT,          -- JSON: exterior/interior checklist, fuel level, remarks
+  FOREIGN KEY (car_id) REFERENCES cars(id)
+);
+
+CREATE TABLE IF NOT EXISTS car_documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  car_id INTEGER NOT NULL,
+  doc_type TEXT NOT NULL,       -- Insurance | Mulkiya / Registration | Airport Vehicle Permit | Other
+  original_name TEXT NOT NULL,
+  stored_filename TEXT NOT NULL,
+  uploaded_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(car_id, doc_type),
   FOREIGN KEY (car_id) REFERENCES cars(id)
 );
 `);
 
-// Simple migration: add duty_team column if this DB pre-dates it
-try {
-  db.exec('ALTER TABLE loans ADD COLUMN duty_team TEXT');
-} catch (err) {
-  // column already exists - ignore
+// Simple migration guards for DBs created before these columns existed
+const migrations = [
+  'ALTER TABLE loans ADD COLUMN duty_team TEXT',
+  'ALTER TABLE loans ADD COLUMN inspection_data TEXT',
+  'ALTER TABLE cars ADD COLUMN remark_text TEXT',
+  'ALTER TABLE cars ADD COLUMN remark_by_staff_number TEXT',
+  'ALTER TABLE cars ADD COLUMN remark_by_name TEXT',
+  'ALTER TABLE cars ADD COLUMN remark_at TEXT'
+];
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (err) { /* column already exists - ignore */ }
 }
 
 module.exports = db;
+module.exports.dataDir = dataDir;
+module.exports.archivesDir = archivesDir;
+module.exports.docsDir = docsDir;

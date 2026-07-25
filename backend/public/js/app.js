@@ -3,6 +3,8 @@ let loanTargetCarId = null;
 let returnTargetCarId = null;
 let verifiedStaff = null; // for loan flow
 let verifiedReturnStaff = null; // for return flow
+let remarkTargetCarId = null;
+let verifiedRemarkStaff = null;
 
 const ALLOCATIONS = [
   'LSM / LMM',
@@ -12,10 +14,58 @@ const ALLOCATIONS = [
   'CABIN TEAM'
 ];
 
+const EXTERIOR_ITEMS = ['Headlights', 'Taillights', 'Beacon Lights', 'Brake Lights', 'Turn Signals', 'Windshield Condition', 'Tyres Condition', 'Tow Hitch Condition/Locking'];
+const INTERIOR_ITEMS = ['Seat Belts', 'Dashboard Condition', 'Seats Condition', 'Cleanliness', 'AC Cooling'];
+const FUEL_LEVELS = ['E', '1/4', '1/2', '3/4', 'F'];
+
+let inspectionState = { exterior: {}, interior: {}, fuel_level: null };
+
+function resetInspectionState() {
+  inspectionState = { exterior: {}, interior: {}, fuel_level: null };
+  EXTERIOR_ITEMS.forEach(i => inspectionState.exterior[i] = 'yes');
+  INTERIOR_ITEMS.forEach(i => inspectionState.interior[i] = 'yes');
+}
+resetInspectionState();
+
+function renderChecklistGroup(containerId, items, group) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = items.map(item => `
+    <div class="checklist-item">
+      <span class="item-label">${item}</span>
+      <div class="yn-toggle">
+        <button type="button" class="${inspectionState[group][item] === 'yes' ? 'active yes' : ''}" onclick="setChecklistValue('${group}','${item.replace(/'/g, "\\'")}','yes')">Yes</button>
+        <button type="button" class="${inspectionState[group][item] === 'no' ? 'active no' : ''}" onclick="setChecklistValue('${group}','${item.replace(/'/g, "\\'")}','no')">No</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function setChecklistValue(group, item, value) {
+  inspectionState[group][item] = value;
+  renderChecklistGroup(group === 'exterior' ? 'exteriorChecklist' : 'interiorChecklist', group === 'exterior' ? EXTERIOR_ITEMS : INTERIOR_ITEMS, group);
+}
+
+function renderFuelSelector() {
+  const container = document.getElementById('fuelSelector');
+  container.innerHTML = FUEL_LEVELS.map(level => `
+    <div class="fuel-option ${inspectionState.fuel_level === level ? 'active' : ''}" onclick="setFuelLevel('${level}')">${level}</div>
+  `).join('');
+}
+
+function setFuelLevel(level) {
+  inspectionState.fuel_level = level;
+  renderFuelSelector();
+}
+
+function toggleInspection() {
+  document.getElementById('inspectionToggle').classList.toggle('open');
+  document.getElementById('inspectionBody').classList.toggle('open');
+}
+
 function fmtTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return d.toLocaleString('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' GST';
+  return d.toLocaleString('en-GB', { timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function updateDateLabel() {
@@ -54,6 +104,7 @@ function closeModal(id) {
   document.getElementById(id).classList.remove('open');
   resetLoanModal();
   resetReturnModal();
+  resetRemarkModal();
 }
 
 async function loadCars() {
@@ -111,7 +162,7 @@ function renderCars() {
     section.appendChild(header);
 
     const sectionGrid = document.createElement('div');
-    sectionGrid.className = 'car-grid';
+    sectionGrid.className = 'allocation-cards';
 
     carsInGroup.forEach(car => sectionGrid.appendChild(buildCarCard(car)));
 
@@ -141,6 +192,14 @@ function buildCarCard(car) {
     loanInfoHtml = `<div class="loan-info">Not available for loan</div>`;
   }
 
+  const hasRemark = !!car.remark_text;
+  const remarkBannerHtml = hasRemark ? `
+    <div class="remark-banner">
+      &#9888; ${escapeHtml(car.remark_text)}
+      <div class="meta">${car.remark_by_name ? 'Noted by ' + escapeHtml(car.remark_by_name) + ' · ' : ''}${fmtTime(car.remark_at)}</div>
+    </div>` : '';
+  const remarkLinkHtml = `<button class="remark-link ${hasRemark ? 'has-remark' : ''}" onclick="openRemarkModal(${car.id})">${hasRemark ? 'View / clear remark' : '+ Add a remark'}</button>`;
+
   card.innerHTML = `
     <div class="row1">
       <div>
@@ -149,7 +208,9 @@ function buildCarCard(car) {
       </div>
       ${badgeHtml}
     </div>
+    ${remarkBannerHtml}
     ${loanInfoHtml}
+    ${remarkLinkHtml}
     ${actionHtml}
   `;
   return card;
@@ -179,6 +240,13 @@ function openLoanModal(carId) {
     select.innerHTML = availableCars.map(c => `<option value="${c.id}">#${c.car_number} · ${c.reg_number} (${c.allocation || ''})</option>`).join('');
   }
 
+  resetInspectionState();
+  renderChecklistGroup('exteriorChecklist', EXTERIOR_ITEMS, 'exterior');
+  renderChecklistGroup('interiorChecklist', INTERIOR_ITEMS, 'interior');
+  renderFuelSelector();
+  document.getElementById('inspectionToggle').classList.remove('open');
+  document.getElementById('inspectionBody').classList.remove('open');
+
   document.getElementById('loanModalOverlay').classList.add('open');
 }
 
@@ -190,6 +258,8 @@ function resetLoanModal() {
   document.getElementById('newStaffNameField').style.display = 'none';
   document.getElementById('newStaffName').value = '';
   document.getElementById('loanError').style.display = 'none';
+  const inspRemarks = document.getElementById('inspectionRemarks');
+  if (inspRemarks) inspRemarks.value = '';
 }
 
 let staffCheckTimeout;
@@ -211,6 +281,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('returnStaffConfirm').innerHTML = '';
     if (!val) return;
     staffCheckTimeout = setTimeout(() => checkReturnStaff(val), 400);
+  });
+
+  document.getElementById('remarkStaffNumber').addEventListener('input', (e) => {
+    clearTimeout(staffCheckTimeout);
+    const val = e.target.value.trim();
+    verifiedRemarkStaff = null;
+    document.getElementById('remarkStaffConfirm').innerHTML = '';
+    if (!val) return;
+    staffCheckTimeout = setTimeout(() => checkRemarkStaff(val), 400);
   });
 });
 
@@ -253,6 +332,13 @@ async function submitLoan() {
 
   if (!carId) { errDiv.textContent = 'No available cars to loan.'; errDiv.style.display = 'block'; return; }
   if (!staffNumber) { errDiv.textContent = 'Enter your staff number.'; errDiv.style.display = 'block'; return; }
+  if (!inspectionState.fuel_level) {
+    errDiv.textContent = 'Please complete the vehicle inspection checklist (fuel quantity is required).';
+    errDiv.style.display = 'block';
+    document.getElementById('inspectionToggle').classList.add('open');
+    document.getElementById('inspectionBody').classList.add('open');
+    return;
+  }
 
   let staffName;
   if (verifiedStaff) {
@@ -278,7 +364,15 @@ async function submitLoan() {
 
   const res = await fetch('/api/loans/issue', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ car_id: carId, staff_number: staffNumber, staff_name: staffName })
+    body: JSON.stringify({
+      car_id: carId, staff_number: staffNumber, staff_name: staffName,
+      inspection: {
+        exterior: inspectionState.exterior,
+        interior: inspectionState.interior,
+        fuel_level: inspectionState.fuel_level,
+        remarks: document.getElementById('inspectionRemarks').value.trim()
+      }
+    })
   });
 
   btn.disabled = false; btn.textContent = 'Confirm loan';
@@ -343,6 +437,98 @@ async function submitReturn() {
     const err = await res.json();
     errDiv.textContent = err.error || 'Something went wrong.';
     errDiv.style.display = 'block';
+  }
+}
+
+// ---------------- REMARK FLOW ----------------
+
+function openRemarkModal(carId) {
+  remarkTargetCarId = carId;
+  const car = cars.find(c => c.id === carId);
+  document.getElementById('remarkCarSub').textContent = `Car ${car.reg_number} (#${car.car_number})`;
+
+  const currentBlock = document.getElementById('currentRemarkBlock');
+  const addBlock = document.getElementById('addRemarkBlock');
+
+  if (car.remark_text) {
+    currentBlock.innerHTML = `
+      <div class="remark-banner" style="margin-bottom:14px;">
+        &#9888; ${escapeHtml(car.remark_text)}
+        <div class="meta">${car.remark_by_name ? 'Noted by ' + escapeHtml(car.remark_by_name) + ' · ' : ''}${fmtTime(car.remark_at)}</div>
+      </div>
+      <button class="btn btn-outline btn-block" style="margin-bottom:16px;" onclick="clearRemark(${carId})">Clear this remark</button>
+    `;
+  } else {
+    currentBlock.innerHTML = `<div class="sub" style="margin-bottom:6px;">No remark on this car right now.</div>`;
+  }
+
+  addBlock.style.display = 'block';
+  document.getElementById('remarkModalOverlay').classList.add('open');
+}
+
+function resetRemarkModal() {
+  remarkTargetCarId = null;
+  verifiedRemarkStaff = null;
+  const staffInput = document.getElementById('remarkStaffNumber');
+  const textInput = document.getElementById('remarkText');
+  if (staffInput) staffInput.value = '';
+  if (textInput) textInput.value = '';
+  const confirmDiv = document.getElementById('remarkStaffConfirm');
+  if (confirmDiv) confirmDiv.innerHTML = '';
+  const errDiv = document.getElementById('remarkError');
+  if (errDiv) errDiv.style.display = 'none';
+}
+
+async function checkRemarkStaff(staffNumber) {
+  const res = await fetch(`/api/staff/verify/${encodeURIComponent(staffNumber)}`);
+  const data = await res.json();
+  const confirmDiv = document.getElementById('remarkStaffConfirm');
+  if (data.found) {
+    verifiedRemarkStaff = data.staff;
+    confirmDiv.innerHTML = `<div class="staff-confirm">&#10003; ${escapeHtml(data.staff.name)}</div>`;
+  } else {
+    verifiedRemarkStaff = null;
+    confirmDiv.innerHTML = `<div class="staff-confirm new">Staff number not found - remark will still be saved.</div>`;
+  }
+}
+
+async function submitRemark() {
+  const errDiv = document.getElementById('remarkError');
+  errDiv.style.display = 'none';
+
+  const staffNumber = document.getElementById('remarkStaffNumber').value.trim();
+  const remarkText = document.getElementById('remarkText').value.trim();
+
+  if (!remarkText) { errDiv.textContent = 'Enter a remark.'; errDiv.style.display = 'block'; return; }
+
+  const res = await fetch(`/api/cars/${remarkTargetCarId}/remark`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      staff_number: staffNumber || null,
+      staff_name: verifiedRemarkStaff ? verifiedRemarkStaff.name : null,
+      remark_text: remarkText
+    })
+  });
+
+  if (res.ok) {
+    closeModal('remarkModalOverlay');
+    showToast('Remark saved', 'success');
+    loadCars();
+  } else {
+    const err = await res.json();
+    errDiv.textContent = err.error || 'Something went wrong.';
+    errDiv.style.display = 'block';
+  }
+}
+
+async function clearRemark(carId) {
+  const res = await fetch(`/api/cars/${carId}/remark`, { method: 'DELETE' });
+  if (res.ok) {
+    closeModal('remarkModalOverlay');
+    showToast('Remark cleared', 'success');
+    loadCars();
+  } else {
+    showToast('Could not clear remark', 'error');
   }
 }
 
