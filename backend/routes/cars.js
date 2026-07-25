@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// GET all cars with active loan info if loaned
+const MAX_REMARKS_PER_CAR = 5;
+
+// GET all cars with active loan info if loaned, plus their current remarks
 router.get('/', (req, res) => {
   const cars = db.prepare(`
     SELECT c.*,
@@ -12,6 +14,12 @@ router.get('/', (req, res) => {
     LEFT JOIN loans l ON l.car_id = c.id AND l.status = 'active'
     ORDER BY c.car_number
   `).all();
+
+  const remarksStmt = db.prepare('SELECT * FROM car_remarks WHERE car_id = ? ORDER BY created_at ASC');
+  cars.forEach(car => {
+    car.remarks = remarksStmt.all(car.id);
+  });
+
   res.json(cars);
 });
 
@@ -21,9 +29,15 @@ router.get('/available', (req, res) => {
   res.json(cars);
 });
 
-// Add or replace a remark on a car (open to anyone using the dashboard - matches the paper
-// process where any staff member could flag an issue on the sheet)
-router.put('/:id/remark', (req, res) => {
+// List remarks for a single car
+router.get('/:id/remarks', (req, res) => {
+  const remarks = db.prepare('SELECT * FROM car_remarks WHERE car_id = ? ORDER BY created_at ASC').all(req.params.id);
+  res.json(remarks);
+});
+
+// Add a remark (open to anyone using the dashboard - matches the paper process where any
+// staff member could flag an issue on the sheet). Capped at MAX_REMARKS_PER_CAR per car.
+router.post('/:id/remarks', (req, res) => {
   const { staff_number, staff_name, remark_text } = req.body;
   if (!remark_text || !remark_text.trim()) {
     return res.status(400).json({ error: 'remark_text is required' });
@@ -31,24 +45,24 @@ router.put('/:id/remark', (req, res) => {
   const car = db.prepare('SELECT * FROM cars WHERE id = ?').get(req.params.id);
   if (!car) return res.status(404).json({ error: 'Car not found' });
 
-  db.prepare(`
-    UPDATE cars SET remark_text = ?, remark_by_staff_number = ?, remark_by_name = ?, remark_at = ?
-    WHERE id = ?
-  `).run(remark_text.trim(), staff_number || null, staff_name || null, new Date().toISOString(), car.id);
+  const count = db.prepare('SELECT COUNT(*) as c FROM car_remarks WHERE car_id = ?').get(car.id).c;
+  if (count >= MAX_REMARKS_PER_CAR) {
+    return res.status(409).json({ error: `This car already has ${MAX_REMARKS_PER_CAR} remarks - clear one before adding another.` });
+  }
 
-  res.json({ success: true });
+  const result = db.prepare(`
+    INSERT INTO car_remarks (car_id, remark_text, staff_number, staff_name, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(car.id, remark_text.trim(), staff_number || null, staff_name || null, new Date().toISOString());
+
+  res.json({ success: true, id: result.lastInsertRowid });
 });
 
-// Clear a remark from a car
-router.delete('/:id/remark', (req, res) => {
-  const car = db.prepare('SELECT * FROM cars WHERE id = ?').get(req.params.id);
-  if (!car) return res.status(404).json({ error: 'Car not found' });
-
-  db.prepare(`
-    UPDATE cars SET remark_text = NULL, remark_by_staff_number = NULL, remark_by_name = NULL, remark_at = NULL
-    WHERE id = ?
-  `).run(car.id);
-
+// Clear one specific remark
+router.delete('/:id/remarks/:remarkId', (req, res) => {
+  const remark = db.prepare('SELECT * FROM car_remarks WHERE id = ? AND car_id = ?').get(req.params.remarkId, req.params.id);
+  if (!remark) return res.status(404).json({ error: 'Remark not found' });
+  db.prepare('DELETE FROM car_remarks WHERE id = ?').run(remark.id);
   res.json({ success: true });
 });
 

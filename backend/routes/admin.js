@@ -56,6 +56,40 @@ router.post('/cars', (req, res) => {
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
+// CSV import: column A = car #, column B = reg #, column C (optional) = allocation.
+// Cars imported without an allocation stay hidden from the dashboard until one is set,
+// but remain fully visible/editable here in the admin panel.
+router.post('/cars/import', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  let records;
+  try {
+    records = parse(req.file.buffer, { skip_empty_lines: true, relax_column_count: true });
+  } catch (err) {
+    return res.status(400).json({ error: 'Could not parse CSV: ' + err.message });
+  }
+
+  const insert = db.prepare('INSERT INTO cars (car_number, reg_number, allocation) VALUES (?, ?, ?)');
+  let imported = 0;
+  let skipped = 0;
+
+  const tx = db.transaction((rows) => {
+    for (const row of rows) {
+      const carNumber = (row[0] || '').toString().trim();
+      const regNumber = (row[1] || '').toString().trim();
+      const allocation = (row[2] || '').toString().trim();
+      if (!carNumber || !regNumber) { skipped++; continue; }
+      // skip a probable header row
+      if (imported === 0 && skipped === 0 && /car\s*#|car\s*number/i.test(carNumber)) { skipped++; continue; }
+      insert.run(carNumber, regNumber, allocation || null);
+      imported++;
+    }
+  });
+  tx(records);
+
+  res.json({ success: true, imported, skipped });
+});
+
 router.put('/cars/:id', (req, res) => {
   const { car_number, reg_number, allocation, status } = req.body;
   const car = db.prepare('SELECT * FROM cars WHERE id = ?').get(req.params.id);
@@ -201,7 +235,7 @@ router.post('/staff/import', upload.single('file'), (req, res) => {
 
   let records;
   try {
-    records = parse(req.file.buffer, { skip_empty_lines: true });
+    records = parse(req.file.buffer, { skip_empty_lines: true, relax_column_count: true });
   } catch (err) {
     return res.status(400).json({ error: 'Could not parse CSV: ' + err.message });
   }

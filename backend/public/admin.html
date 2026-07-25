@@ -45,12 +45,22 @@
       <div class="admin-tab active" data-tab="cars">Cars</div>
       <div class="admin-tab" data-tab="staff">Staff</div>
       <div class="admin-tab" data-tab="records">Records</div>
+      <div class="admin-tab" data-tab="help">Help</div>
     </div>
 
     <!-- CARS TAB -->
     <div class="admin-panel active" id="panel-cars">
       <div class="toolbar">
         <button class="btn btn-primary btn-sm" onclick="openAddCarForm()">+ Add car</button>
+        <label class="btn btn-outline btn-sm" style="cursor:pointer;">
+          Import CSV
+          <input type="file" id="carsCsvFile" accept=".csv" style="display:none;" onchange="importCarsCsv(event)">
+        </label>
+      </div>
+      <div class="sub" style="color:var(--text-dim); font-size:12.5px; margin-bottom:12px;">
+        CSV format: column A = car #, column B = reg #, column C (optional) = allocation. Cars
+        imported without an allocation stay hidden from the dashboard until you set one, but
+        remain visible and editable right here.
       </div>
 
       <div id="addCarForm" style="display:none; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px;">
@@ -131,6 +141,80 @@
 
         <h3 style="font-size:13px; margin: 18px 0 8px; color:var(--text-dim);">Archived files</h3>
         <div id="archiveFilesList"></div>
+      </div>
+    </div>
+
+    <!-- HELP TAB -->
+    <div class="admin-panel" id="panel-help">
+      <div style="max-width:720px; font-size:13.5px; line-height:1.7; color:var(--text);">
+
+        <h2 style="font-size:16px; margin-bottom:6px;">How the dashboard works</h2>
+        <p class="sub" style="margin-bottom:18px;">A quick reference for staff using the loan/return dashboard day to day.</p>
+
+        <h3 style="font-size:14px; margin-bottom:6px;">Loaning a car</h3>
+        <p style="color:var(--text-dim); margin-bottom:14px;">
+          Cars are grouped by team on the dashboard (LSM/LMM, B1 Engineer/Technician, B2 Engineer,
+          Cat A Technician, Cabin Team). Tap <strong>"Loan this car"</strong> on any available (green)
+          car, enter your staff number, and your name fills in automatically if you're already in the
+          system. If not, you'll be asked to register your name on the spot. Complete the short
+          vehicle inspection checklist (exterior, interior, fuel level - defaults to "Yes" so it's
+          quick, just flip anything that's not OK to "No") and confirm the loan.
+        </p>
+
+        <h3 style="font-size:14px; margin-bottom:6px;">Returning a car</h3>
+        <p style="color:var(--text-dim); margin-bottom:14px;">
+          Find the car (shown in red / "Loaned Out"), tap <strong>"Return this car"</strong>, and
+          confirm the staff number of whoever is returning it - it doesn't have to be the same
+          person who took it out.
+        </p>
+
+        <h3 style="font-size:14px; margin-bottom:6px;">Remarks</h3>
+        <p style="color:var(--text-dim); margin-bottom:14px;">
+          Noticed something wrong with a car (dirty, AC not cooling, dead battery, etc.)? Tap
+          <strong>"+ Add a remark"</strong> on that car's card. It shows as a warning banner on the
+          card for everyone until someone clears it (up to 5 remarks can be open on one car at a
+          time). No login is needed to add or clear a remark.
+        </p>
+
+        <h3 style="font-size:14px; margin-bottom:6px;">Shift &amp; team</h3>
+        <p style="color:var(--text-dim); margin-bottom:18px;">
+          The header shows which of the 4 rotating teams (A/B/C/D) is currently on duty and
+          whether it's the Day (06:00-18:00) or Night (18:00-06:00) shift - this is calculated
+          automatically and gets attached to every loan record, no manual entry needed.
+        </p>
+
+        <h2 style="font-size:16px; margin-bottom:6px;">Admin panel quick reference</h2>
+
+        <h3 style="font-size:14px; margin-bottom:6px;">Cars tab</h3>
+        <p style="color:var(--text-dim); margin-bottom:14px;">
+          Add cars one at a time or bulk-import via CSV. Edit a car to update its details, manage
+          its allocation (which controls which dashboard section it appears in - leave it blank to
+          keep a car hidden from the dashboard until it's ready), and attach documents (Insurance,
+          Mulkiya/Registration, Airport Permit, Other - up to 4 per car). If a car is loaned and the
+          staff member forgot to return it in the app, use the <strong>Return</strong> button here.
+        </p>
+
+        <h3 style="font-size:14px; margin-bottom:6px;">Staff tab</h3>
+        <p style="color:var(--text-dim); margin-bottom:14px;">
+          Add staff manually or bulk-import via CSV (staff number in column A, name in column B).
+          Names can be edited any time.
+        </p>
+
+        <h3 style="font-size:14px; margin-bottom:6px;">Records tab</h3>
+        <p style="color:var(--text-dim); margin-bottom:14px;">
+          Every loan is logged here with the duty team, timestamps, and a link to view the full
+          vehicle inspection checklist that was completed at pickup. Filter by date, team, staff
+          number, or car, and export to CSV any time.
+        </p>
+
+        <h3 style="font-size:14px; margin-bottom:6px;">Monthly archives</h3>
+        <p style="color:var(--text-dim);">
+          Past months are archived to a downloadable CSV file and cleared from the live system
+          automatically to keep things fast (this also happens automatically in the background).
+          You can also archive a month manually, or just download a snapshot without deleting
+          anything. All archived files stay listed and downloadable here.
+        </p>
+
       </div>
     </div>
   </div>

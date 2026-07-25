@@ -39,6 +39,14 @@ company cars from their phones, and admins manage the fleet, staff list, and shi
   **automatically** in the background every few hours for any month that's fully in the past.
   Archived files are listed and downloadable from the same screen.
 - All timestamps display in local (UAE) time without a confusing timezone label.
+- **Bulk car import via CSV** — Admin → Cars → Import CSV, with car # / reg # / optional
+  allocation columns. Cars imported without an allocation stay hidden from the dashboard (but
+  fully visible and editable in admin) until an allocation is set.
+- **Up to 5 remarks per car** — remarks no longer overwrite each other; each has its own clear
+  button, and a car can carry up to 5 open remarks before you need to clear one to add another.
+- **Help tab** — Admin → Help has a plain-language summary of how the dashboard and admin panel
+  work, for onboarding new staff or admins quickly.
+- Car cards now show **"Reg #:"** before the plate number for clarity.
 
 ## Project structure
 

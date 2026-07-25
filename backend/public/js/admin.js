@@ -147,6 +147,24 @@ async function submitAddCar() {
   }
 }
 
+async function importCarsCsv(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await adminFetch('/api/admin/cars/import', { method: 'POST', body: formData });
+  if (res.ok) {
+    const data = await res.json();
+    showToast(`Imported ${data.imported} car(s) (${data.skipped} skipped)`);
+    loadCars();
+  } else {
+    const err = await res.json();
+    showToast(err.error || 'Import failed', 'error');
+  }
+  event.target.value = '';
+}
+
 let allCarsCache = [];
 let docsCountCache = {};
 

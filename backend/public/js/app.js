@@ -118,7 +118,11 @@ function renderCars() {
   const empty = document.getElementById('emptyState');
   grid.innerHTML = '';
 
-  if (cars.length === 0) {
+  // Cars with no allocation set yet stay hidden from the dashboard (they're still
+  // manageable from the admin panel) until someone assigns them a category.
+  const visibleCars = cars.filter(c => c.allocation && c.allocation.trim());
+
+  if (visibleCars.length === 0) {
     empty.style.display = 'block';
     document.getElementById('countAvailable').textContent = 0;
     document.getElementById('countLoaned').textContent = 0;
@@ -128,7 +132,7 @@ function renderCars() {
   empty.style.display = 'none';
 
   let available = 0, loaned = 0, maintenance = 0;
-  cars.forEach(car => {
+  visibleCars.forEach(car => {
     if (car.status === 'available') available++;
     else if (car.status === 'loaned') loaned++;
     else maintenance++;
@@ -137,12 +141,13 @@ function renderCars() {
   document.getElementById('countLoaned').textContent = loaned;
   document.getElementById('countMaintenance').textContent = maintenance;
 
-  // Group cars by fixed allocation categories, with an "Unassigned" bucket for anything else
+  // Group cars by fixed allocation categories, with an "Unassigned" bucket for anything
+  // that has an allocation string not matching the fixed list exactly
   const groups = {};
   ALLOCATIONS.forEach(a => { groups[a] = []; });
   groups['Unassigned'] = [];
 
-  cars.forEach(car => {
+  visibleCars.forEach(car => {
     const key = ALLOCATIONS.includes(car.allocation) ? car.allocation : 'Unassigned';
     groups[key].push(car);
   });
@@ -192,19 +197,23 @@ function buildCarCard(car) {
     loanInfoHtml = `<div class="loan-info">Not available for loan</div>`;
   }
 
-  const hasRemark = !!car.remark_text;
-  const remarkBannerHtml = hasRemark ? `
+  const remarks = car.remarks || [];
+  const remarkBannerHtml = remarks.length ? `
     <div class="remark-banner">
-      &#9888; ${escapeHtml(car.remark_text)}
-      <div class="meta">${car.remark_by_name ? 'Noted by ' + escapeHtml(car.remark_by_name) + ' · ' : ''}${fmtTime(car.remark_at)}</div>
+      ${remarks.map(r => `
+        <div class="remark-item">
+          &#9888; ${escapeHtml(r.remark_text)}
+          <div class="meta">${r.staff_name ? 'Noted by ' + escapeHtml(r.staff_name) + ' · ' : ''}${fmtTime(r.created_at)}</div>
+        </div>
+      `).join('')}
     </div>` : '';
-  const remarkLinkHtml = `<button class="remark-link ${hasRemark ? 'has-remark' : ''}" onclick="openRemarkModal(${car.id})">${hasRemark ? 'View / clear remark' : '+ Add a remark'}</button>`;
+  const remarkLinkHtml = `<button class="remark-link ${remarks.length ? 'has-remark' : ''}" onclick="openRemarkModal(${car.id})">${remarks.length ? `View / manage remarks (${remarks.length})` : '+ Add a remark'}</button>`;
 
   card.innerHTML = `
     <div class="row1">
       <div>
         <div class="car-num">Car #${escapeHtml(car.car_number)}</div>
-        <div class="reg-num">${escapeHtml(car.reg_number)}</div>
+        <div class="reg-num">Reg #: ${escapeHtml(car.reg_number)}</div>
       </div>
       ${badgeHtml}
     </div>
@@ -442,6 +451,8 @@ async function submitReturn() {
 
 // ---------------- REMARK FLOW ----------------
 
+const MAX_REMARKS_PER_CAR = 5;
+
 function openRemarkModal(carId) {
   remarkTargetCarId = carId;
   const car = cars.find(c => c.id === carId);
@@ -449,20 +460,35 @@ function openRemarkModal(carId) {
 
   const currentBlock = document.getElementById('currentRemarkBlock');
   const addBlock = document.getElementById('addRemarkBlock');
+  const remarks = car.remarks || [];
 
-  if (car.remark_text) {
+  if (remarks.length) {
     currentBlock.innerHTML = `
-      <div class="remark-banner" style="margin-bottom:14px;">
-        &#9888; ${escapeHtml(car.remark_text)}
-        <div class="meta">${car.remark_by_name ? 'Noted by ' + escapeHtml(car.remark_by_name) + ' · ' : ''}${fmtTime(car.remark_at)}</div>
+      <div style="margin-bottom:14px;">
+        ${remarks.map(r => `
+          <div class="remark-banner" style="margin-bottom:8px;">
+            <div class="remark-item" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+              <div>
+                &#9888; ${escapeHtml(r.remark_text)}
+                <div class="meta">${r.staff_name ? 'Noted by ' + escapeHtml(r.staff_name) + ' · ' : ''}${fmtTime(r.created_at)}</div>
+              </div>
+              <button class="btn btn-outline btn-sm" onclick="clearRemark(${carId}, ${r.id})">Clear</button>
+            </div>
+          </div>
+        `).join('')}
       </div>
-      <button class="btn btn-outline btn-block" style="margin-bottom:16px;" onclick="clearRemark(${carId})">Clear this remark</button>
     `;
   } else {
-    currentBlock.innerHTML = `<div class="sub" style="margin-bottom:6px;">No remark on this car right now.</div>`;
+    currentBlock.innerHTML = `<div class="sub" style="margin-bottom:6px;">No remarks on this car right now.</div>`;
   }
 
-  addBlock.style.display = 'block';
+  if (remarks.length >= MAX_REMARKS_PER_CAR) {
+    addBlock.style.display = 'none';
+    currentBlock.innerHTML += `<div class="sub">Maximum of ${MAX_REMARKS_PER_CAR} remarks reached - clear one to add another.</div>`;
+  } else {
+    addBlock.style.display = 'block';
+  }
+
   document.getElementById('remarkModalOverlay').classList.add('open');
 }
 
@@ -501,8 +527,8 @@ async function submitRemark() {
 
   if (!remarkText) { errDiv.textContent = 'Enter a remark.'; errDiv.style.display = 'block'; return; }
 
-  const res = await fetch(`/api/cars/${remarkTargetCarId}/remark`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+  const res = await fetch(`/api/cars/${remarkTargetCarId}/remarks`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       staff_number: staffNumber || null,
       staff_name: verifiedRemarkStaff ? verifiedRemarkStaff.name : null,
@@ -521,12 +547,14 @@ async function submitRemark() {
   }
 }
 
-async function clearRemark(carId) {
-  const res = await fetch(`/api/cars/${carId}/remark`, { method: 'DELETE' });
+async function clearRemark(carId, remarkId) {
+  const res = await fetch(`/api/cars/${carId}/remarks/${remarkId}`, { method: 'DELETE' });
   if (res.ok) {
-    closeModal('remarkModalOverlay');
     showToast('Remark cleared', 'success');
-    loadCars();
+    await loadCars();
+    // keep the modal open and refresh its contents in case there are other remarks left
+    const stillHasCar = cars.find(c => c.id === carId);
+    if (stillHasCar) openRemarkModal(carId);
   } else {
     showToast('Could not clear remark', 'error');
   }

@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS car_documents (
   UNIQUE(car_id, doc_type),
   FOREIGN KEY (car_id) REFERENCES cars(id)
 );
+
+CREATE TABLE IF NOT EXISTS car_remarks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  car_id INTEGER NOT NULL,
+  remark_text TEXT NOT NULL,
+  staff_number TEXT,
+  staff_name TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (car_id) REFERENCES cars(id)
+);
 `);
 
 // Simple migration guards for DBs created before these columns existed
@@ -78,6 +88,19 @@ const migrations = [
 for (const sql of migrations) {
   try { db.exec(sql); } catch (err) { /* column already exists - ignore */ }
 }
+
+// One-time data migration: move any old single-remark values into the new car_remarks table
+try {
+  const oldRemarks = db.prepare('SELECT * FROM cars WHERE remark_text IS NOT NULL').all();
+  if (oldRemarks.length) {
+    const insert = db.prepare('INSERT INTO car_remarks (car_id, remark_text, staff_number, staff_name, created_at) VALUES (?, ?, ?, ?, ?)');
+    const clear = db.prepare('UPDATE cars SET remark_text = NULL, remark_by_staff_number = NULL, remark_by_name = NULL, remark_at = NULL WHERE id = ?');
+    oldRemarks.forEach(c => {
+      insert.run(c.id, c.remark_text, c.remark_by_staff_number, c.remark_by_name, c.remark_at || new Date().toISOString());
+      clear.run(c.id);
+    });
+  }
+} catch (err) { /* car_remarks table not ready yet on very first run - ignore */ }
 
 module.exports = db;
 module.exports.dataDir = dataDir;
