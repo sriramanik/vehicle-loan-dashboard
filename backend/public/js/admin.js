@@ -171,6 +171,7 @@ let docsCountCache = {};
 async function loadCars() {
   const res = await adminFetch('/api/admin/cars');
   const cars = await res.json();
+  cars.sort((a, b) => a.car_number.localeCompare(b.car_number, undefined, { numeric: true, sensitivity: 'base' }));
   allCarsCache = cars;
 
   // also need loan info for "loaned to" column -> fetch public cars endpoint which joins active loan

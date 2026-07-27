@@ -152,6 +152,11 @@ function renderCars() {
     groups[key].push(car);
   });
 
+  // Natural sort so "2, 3, 6, 14" doesn't come out as "14, 2, 3, 6" (plain string sort),
+  // while still handling non-numeric car numbers like "T1" or "VAN" sensibly.
+  const naturalSort = (a, b) => a.car_number.localeCompare(b.car_number, undefined, { numeric: true, sensitivity: 'base' });
+  Object.values(groups).forEach(group => group.sort(naturalSort));
+
   const orderedKeys = [...ALLOCATIONS, 'Unassigned'];
 
   orderedKeys.forEach(key => {
