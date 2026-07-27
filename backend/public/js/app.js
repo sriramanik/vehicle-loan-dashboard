@@ -560,5 +560,9 @@ async function clearRemark(carId, remarkId) {
   }
 }
 
+function openHelpModal() {
+  document.getElementById('helpModalOverlay').classList.add('open');
+}
+
 loadCars();
 setInterval(loadCars, 20000);

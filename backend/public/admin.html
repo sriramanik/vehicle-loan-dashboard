@@ -26,17 +26,19 @@
 
 <div id="adminApp" style="display:none;">
 
-  <div class="topbar">
-    <div class="brand">
-      <div class="brand-mark">VC</div>
-      <div>
-        <div class="brand-title">Admin panel</div>
-        <div class="brand-sub">Vehicle Control Sheet</div>
+  <div class="page-header">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-mark">VC</div>
+        <div>
+          <div class="brand-title">Admin panel</div>
+          <div class="brand-sub">Vehicle Control Sheet</div>
+        </div>
       </div>
-    </div>
-    <div style="display:flex; gap:10px;">
-      <a href="index.html" class="btn btn-outline btn-sm">Dashboard</a>
-      <button class="btn btn-outline btn-sm" onclick="logout()">Log out</button>
+      <div class="topbar-actions">
+        <a href="index.html" class="btn btn-outline btn-sm">Dashboard</a>
+        <button class="btn btn-outline btn-sm" onclick="logout()">Log out</button>
+      </div>
     </div>
   </div>
 
@@ -148,42 +150,11 @@
     <div class="admin-panel" id="panel-help">
       <div style="max-width:720px; font-size:13.5px; line-height:1.7; color:var(--text);">
 
-        <h2 style="font-size:16px; margin-bottom:6px;">How the dashboard works</h2>
-        <p class="sub" style="margin-bottom:18px;">A quick reference for staff using the loan/return dashboard day to day.</p>
-
-        <h3 style="font-size:14px; margin-bottom:6px;">Loaning a car</h3>
-        <p style="color:var(--text-dim); margin-bottom:14px;">
-          Cars are grouped by team on the dashboard (LSM/LMM, B1 Engineer/Technician, B2 Engineer,
-          Cat A Technician, Cabin Team). Tap <strong>"Loan this car"</strong> on any available (green)
-          car, enter your staff number, and your name fills in automatically if you're already in the
-          system. If not, you'll be asked to register your name on the spot. Complete the short
-          vehicle inspection checklist (exterior, interior, fuel level - defaults to "Yes" so it's
-          quick, just flip anything that's not OK to "No") and confirm the loan.
-        </p>
-
-        <h3 style="font-size:14px; margin-bottom:6px;">Returning a car</h3>
-        <p style="color:var(--text-dim); margin-bottom:14px;">
-          Find the car (shown in red / "Loaned Out"), tap <strong>"Return this car"</strong>, and
-          confirm the staff number of whoever is returning it - it doesn't have to be the same
-          person who took it out.
-        </p>
-
-        <h3 style="font-size:14px; margin-bottom:6px;">Remarks</h3>
-        <p style="color:var(--text-dim); margin-bottom:14px;">
-          Noticed something wrong with a car (dirty, AC not cooling, dead battery, etc.)? Tap
-          <strong>"+ Add a remark"</strong> on that car's card. It shows as a warning banner on the
-          card for everyone until someone clears it (up to 5 remarks can be open on one car at a
-          time). No login is needed to add or clear a remark.
-        </p>
-
-        <h3 style="font-size:14px; margin-bottom:6px;">Shift &amp; team</h3>
-        <p style="color:var(--text-dim); margin-bottom:18px;">
-          The header shows which of the 4 rotating teams (A/B/C/D) is currently on duty and
-          whether it's the Day (06:00-18:00) or Night (18:00-06:00) shift - this is calculated
-          automatically and gets attached to every loan record, no manual entry needed.
-        </p>
-
         <h2 style="font-size:16px; margin-bottom:6px;">Admin panel quick reference</h2>
+        <p class="sub" style="margin-bottom:18px;">
+          Looking for the staff-facing "how to loan/return a car" guide instead? That's on the
+          <a href="index.html">dashboard</a> itself, under its Help link - no login needed.
+        </p>
 
         <h3 style="font-size:14px; margin-bottom:6px;">Cars tab</h3>
         <p style="color:var(--text-dim); margin-bottom:14px;">
